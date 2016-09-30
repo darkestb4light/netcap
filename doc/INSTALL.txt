@@ -1,0 +1,213 @@
+===========================================================================
+Purpose:
+	This is the installation file for running netcap on a *nix system 
+	such as OS X or FreeBSD. For other information, you can see the 
+	README.txt file or once netcap is installed, run: ./netcap --help
+
+	It should be noted that although netcap has only been tested with 
+	OS X and FreeBSD, it should run on any *nix compatible system 
+	that supports libpcap. This includes (in theory) Cygwin with  
+	Windows.
+===========================================================================
+
+	======================
+	INSTALLATION OF NETCAP
+	======================
+	
+If you wish to keep it simple, complete steps:
+
+#1 = It contains the default structure, then:
+#4 = Install the dependencies
+#5 = Execute: /path/to/netcap —-help (where /path/to/netcap is the location 
+of where netcap resides)
+	
+	
+
+1. Copy netcap-<version>.tar.gz to desired server(s) for installation.
+
+Note: Within netcap-<version>.tar.gz, the following structure exists:
+
+- bin/
+	nc-archive				<-- Archives server cache/notify files 
+	nc-refresh-client		<-- Client reloads learned rules 
+	nc-refresh-server		<-- Server dumps cache/notify message
+	nc-start-client			<-- Client script to automate starting
+	nc-start-client-onload	<-- Client script for starting on boot (OSX)
+	nc-start-server			<-- Server script to automate starting
+	nc-start-server-onload	<-- Server script for starting on boot (OSX)
+	nc-stop-client			<-- Client script to automate stopping
+	nc-stop-server			<-- Server script to automate stopping
+	netcap					<-- Main program
+- dependencies/
+	/io-socket/IO-1.25.tar.gz
+	/mime-lite/MIME-Lite-3.021.tar.gz
+	/net-cidr/Net-CIDR-0.11.tar.gz
+	/net-packet/NetPacket-v0.42.0.tar.gz
+	/net-pcap/Net-Pcap-0.16.tar.gz
+	/net-smtp/libnet-1.22.tar.gz
+	/time-local/Time-Local-1.1901.tar.gz
+- doc/
+	INSTALL.txt				<-- Installation guide
+	netcap.md5				<-- Contains this version's MD5 hash
+	README-FREEBSD.txt		<-- Guide for starting netcap at boot (FREEBSD)
+	README-OSX.txt			<-- Guide for starting netcap at boot (OSX)
+	README.txt				<-- Overview and other information
+- etc/
+	netcap-client.plist		<-- Client script for starting on boot (OSX)
+	netcap-server.plist		<-- Server script for starting on boot (OSX)
+	netcap.config			<-- Netcap's configuration file
+- var/
+	sample.learn			<-- A sample learn file (worth looking at)
+
+=================================================
+
+2. Create structure for netcap as root - Change "/path/to/netcap/" to 
+be a valid path for netcap to be installed
+
+# mkdir /path/to/netcap/ /path/to/netcap/bin /path/to/netcap/etc /path/to/netcap/var /path/to/netcap/var/log /path/to/netcap/var/www
+
+=================================================
+
+3. Copy files for netcap as root. From the directory that contains: 
+"netcap-<version>.tar.gz":
+
+# tar xzvf netcap-<version>.tar.gz
+# cp netcap-<version>/bin/* /path/to/netcap/bin/
+# cp netcap-<version>/etc/netcap.config /path/to/netcap/etc/netcap.config
+# cp netcap-<version>/var/sample.learn /path/to/netcap/var/
+# chown -R root:wheel /path/to/netcap/bin/netcap
+# chmod 500 /path/to/netcap/bin/netcap
+# chmod 544 /path/to/netcap/bin/nc*
+# chmod 644 /path/to/netcap/etc/netcap.config
+
+Note: 
+You may need to set the interpreter path for netcap and accompanying 
+scripts. 
+
+3a. Find out where PERL is installed. Netcap looks for it in: /usr/bin/
+
+# which perl 
+- or -
+# whereis perl
+
+3b. Find out where the shell (bash) is installed. The scripts expect bash 
+to be installed in: /bin/
+
+# which bash 
+- or -
+# whereis bash
+
+3c. If it is not installed where desired in step 3a or 3b, then edit 
+accordingly.
+# vi <name>
+
+3d. Modify netcap by replacing the following path from:
+#!/usr/bin/perl
+…
+With the path as returned in step 3a.
+
+3e. Modify the script by replacing the following path from:
+#!/bin/bash
+…
+With the path as returned in step 3b.
+
+=================================================
+
+4. Determine what netcap dependencies may need to be installed:
+
+# /path/to/netcap/bin/netcap --help
+
+Note: 
+If the netcap "help" menu displays, all necessary dependencies should be installed and you can proceed to step 4. Otherwise, install the required dependency (proceed to step 3a):
+
+4a. For each necessary dependency package, perform the following:
+
+# sudo -s (unless you are already root)
+# cd <path>/netcap-<version>/dependencies/<dependency>
+# tar xzvf <dependency>.tar.gz
+# cd <dependency>
+
+Now, proceed to 3b.
+
+4b. To compile each dependency (unless otherwise specified):
+
+# perl Makefile.PL
+# make test
+# make install
+
+Note: Net::Pcap is a bit different as it is a wrapper for the libpcap API 
+written in C, try to compile it doing the same approach as above. If this 
+is not possible (due to errors or you do not see a "Makefile.PL" file, 
+proceed to build the dependency as follows:
+
+# make
+# make test (not required but will conduct tests)
+# make install
+
+Note: If any errors, you will need to debug and consult the appropriate dependency documentation to deal with it.
+
+Now, proceed to 4c (assuming there were no issues that prevented 
+compiling).
+
+4c. Repeat step 4 until there are no more dependencies to install.
+
+=================================================
+
+5. Once step 4 is complete, you should be able to run netcap. Test by 
+executing:
+
+/path/to/netcap/bin/netcap --help
+
+You should get the "help" output. If this happens, you are good to go!
+
+=================================================
+
+If desired, you can proceed to the "TESTING NETCAP" section in the README.txt file to ensure netcap is working as desired. For some optional things to set up see the "ADDITIONAL SETUP" section below.  
+
+	================
+	ADDITIONAL SETUP
+	================
+
+- Within each user's home who wishes to interact with netcap, you can set 
+a symbolic link for ease of access to the netcap install location:
+
+# ln -s /path/to/netcap-dir/ <user-home>/path/netcap-dir/
+# ln -s /path/to/netcap-dir/netcap <user-home>/path/netcap-dir/netcap
+
+- Set up netcap cache and notify messages to be archived. The script could 
+run from cron. The below example calls "nc-archive" at 23:59 hours daily:
+
+59 23 * * * /path/to/netcap/bin/nc-archive
+
+The below example calls "nc-archive" at 1700 hours the last week of every 
+month:
+
+00 17 24-31 * * /path/to/netcap/bin/nc-archive
+
+- Set up the script "nc-refresh-server" to be scheduled in root's crontab 
+so that, at a desired interval, it sends a SIGUSR1 to the server to dump the cached traffic. The below example calls "nc-refresh-server" every 15 min-
+utes. This script simply checks for a running netcap server and sends it 
+a SIGUSR1 signal. If you are running netcap with the notifications enabled, 
+this will cause netcap to output a notification message to the configured location.
+
+00,15,30,45 * * * * /path/to/netcap/bin/nc-refresh-server
+
+Note:
+There is another script (nc-refresh-client) which sends a SIGUSR1 signal to 
+a running netcap client. Upon receipt, the netcap client will reload its 
+learned rules. This is useful if the learn file has been updated since the 
+netcap client has been running.
+
+- If you have a web server, the notification message can be read from a 
+link that points to this message file. You can have the notification 
+message configured to the installed path such as: /path/to/netcap/var/www/, 
+but create a symbolic link within this path. Upon writing the notification 
+message, it will be outputted to the file residing within the HTTP 
+server's web root. For example:
+
+# touch /web-root/path/netcap-message-file
+# ln -s /web-root/path/netcap-message-file /path/to/netcap/netcap-message-file
+
+Note: The notification message can also be emailed to a list of recipients 
+if desired. Or, you can do what you wish with the outputted cache file 
+or notifications messages (i.e. parsing and creating statistics, etc).

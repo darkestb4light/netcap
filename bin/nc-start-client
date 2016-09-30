@@ -1,0 +1,42 @@
+#!/bin/bash
+##################################################
+#Purpose:
+#	Provide an automated script to start the 
+#	netcap client process.
+#Developer:
+#	Ray Daley
+#Notes:
+#	- This script is intended to be used with 
+#	the netcap program.
+#	- You may need to set the path for the 
+#	bash interpreter above if it is different 
+#	then: "/bin/bash"
+##################################################
+
+#	1. Set the below variables for:
+#		A. Absolute path to netcap (include netcap program in path)
+#		B. Arguments/options that netcap (CLIENT) should be started with
+#	2. Uncomment each variable line
+
+#NETCAP_PROG=
+#NETCAP_ARG=
+
+STATUS=-1
+
+echo "$0 will attempt to start the netcap client..."
+if [[ "$(ps auxww | awk '/netcap/ && /--client/ && !/awk/ {print $2}')" > 0 ]]; then
+	echo "Found netcap (client) running. Aborting."
+	STATUS=-1
+else
+	echo "It appears a netcap client is not running. Starting..."
+	$NETCAP_PROG $NETCAP_ARG
+	if [[ "$(ps auxww | awk '/netcap/ && /--client/ && !/awk/ {print $2}')" > 0 ]]; then
+		echo "Client running."
+		STATUS=0
+	else
+		echo "Unable to start netcap client. Aborting."
+		STATUS=1
+	fi
+fi
+
+exit $STATUS

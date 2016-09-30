@@ -1,0 +1,16 @@
+#!/bin/sh
+# PROVIDE: netcap
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="netcap"
+rcvar=`set_rcvar`
+
+command="/path/to/netcap/netcap"
+command_args="--monitor --client <server-address> <server-port-number> --interface <ethernet-device> --promiscuous --unique --daemon --read-timeout 1 --Config </path/to/netcap/config-fileg>" 
+
+load_rc_config $name
+run_rc_command "$1"
+

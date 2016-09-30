@@ -1,0 +1,16 @@
+#!/bin/sh
+# PROVIDE: netcap
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="netcap"
+rcvar=`set_rcvar`
+
+command="/path/to/netcap/netcap"
+command_args="--monitor --server <server-address> <server-port-number> --sort-cache-date --cache-key-dst --log=server --notify --daemon --Config </path/to/netcap-config/netcap.config>"
+
+load_rc_config $name
+run_rc_command "$1"
+

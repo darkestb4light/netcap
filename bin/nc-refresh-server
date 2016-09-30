@@ -1,0 +1,50 @@
+#!/bin/bash
+##################################################
+#Purpose:
+#       Provide an automated script to "refresh" a
+#       netcap server. This will cause it to dump
+#       its internal cache (and build a notification
+#       message, if configured to do so).
+#Developer:
+#       Ray Daley
+#Notes:
+#	- This script is intended to be used with 
+#	the netcap program.
+#	- You may need to set the path for the 
+#	bash interpreter above if it is different 
+#	then: "/bin/bash"
+##################################################
+
+HOST="$(uname -a | awk '{print $2}')"
+
+#	1. Set the below variables for (If you do not want emails, leave 
+#	commented):
+#		A. Name of recipient email address
+#		B. Change message upon issue sending signal to process (if desired)
+#		C. Change message upon process not running (if desired)
+#	2. Uncomment each variable line and corresponding "echo" line below
+
+#RECIPIENT=""
+#MSG_SUB="netcap (server) refresh failed"
+#MSG_BODY_SIG="$0: netcap (on $HOST) can't receive refresh signal."
+#MSG_BODY_PS="$0: netcap (on $HOST) is not running."
+
+STATUS=1
+
+if [[ "$(ps auxww | awk '/netcap/ && /--server/ && !/awk/ {print $2}')" > 0 ]]; then
+        pid="$(ps auxww | awk '/netcap/ && /--server/ && !/awk/ {print $2}')"
+        echo "Trying to refresh server (pid: $pid)..."
+        if [[ "$(kill -USR1 $pid)" ]]; then     
+                #echo $MSG_BODY_SIG | mail -s "$MSG_SUB" "$RECIPIENT" 2>/dev/null &
+                echo "Unable to send -USR1 signal to netcap process (pid: $pid)."
+        else
+                echo "Server refreshed."
+                STATUS=0
+        fi
+else
+        #echo $MSG_BODY_PS | mail -s "$MSG_SUB" "$RECIPIENT" 2>/dev/null &
+        echo "It appears as though netcap is NOT running."
+        STATUS=-1
+fi
+
+exit $STATUS

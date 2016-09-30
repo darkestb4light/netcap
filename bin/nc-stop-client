@@ -1,0 +1,43 @@
+#!/bin/bash
+##################################################
+#Purpose:
+#	Provide an automated script to stop the netcap
+#	client process.
+#Developer:
+#	Ray Daley
+#Notes:
+#	- This script is intended to be used with 
+#	the netcap program.
+#	- You may need to set the path for the 
+#	bash interpreter above if it is different 
+#	then: "/bin/bash"
+##################################################
+
+STATUS=1
+
+echo "$0 will attempt to stop the netcap client..."
+if [[ "$(ps auxww | awk '/netcap/ && /--client/ && !/awk/ {print $2}')" > 0 ]]; then
+	echo "Found netcap (client) running. Attempting to stop with SIGTERM..."
+	pid="$(ps auxww | awk '/netcap/ && /--client/ && !/awk/ {print $2}')"
+	kill -15 $pid &
+	if [[ "$(ps auxww | awk '/netcap/ && /--client/ && !/awk/ {print $2}')" > 0 ]]; then
+		echo "Unable to stop netcap client with SIGTERM. Will try SIGKILL..."
+		pid="$(ps auxww | awk '/netcap/ && /--client/ && !/awk/ {print $2}')"
+        	kill -9 $pid &
+		if [[ "$(ps auxww | awk '/netcap/ && /--client/ && !/awk/ {print $2}')" > 0 ]]; then
+			echo "Unable to stop netcap client."
+		else
+			echo "The netcap client successfully stopped with SIGKILL."
+			STATUS=0
+		fi
+	else
+		echo "The netcap client successfully stopped with SIGTERM."
+		STATUS=0
+	fi
+else
+	echo "It appears a netcap client is not running. Quitting."
+	STATUS=-1
+fi
+
+exit $STATUS
+

@@ -1,0 +1,3918 @@
+#!/usr/bin/perl
+################################################################################
+# Purpose:
+#	Provides functionality to:
+#	1. Capture network packets in order to specify what is "normal" traffic
+#	2. Learn from previously captured traffic and determine what is "normal"
+#	3. Monitor subsequent network traffic and alert when traffic is not 
+#	"normal"
+#
+#	It has other options, but the above is its intended purpose. For more 
+#	information, execute: ./netcap --help
+# Developer:
+#	Ray Daley
+# Note:
+#	Usage:
+#		./netcap <command> [option ...]
+#	Permissions:
+#		Sufficient permissions (e.g., root) are required for some commands:
+#		-li, --list-interfaces
+#		-c, --capture
+#		-m, --monitor --client
+# 	Dependencies:
+#		- IO::Socket (v. 1.25, part of core installed modules)
+#			http://search.cpan.org/~gbarr/IO-1.25/lib/IO/Socket.pm
+#		- MIME::Lite (v. 3.027)
+#			http://search.cpan.org/~rjbs/MIME-Lite-3.027/lib/MIME/Lite.pm
+#		- Net::CIDR (v 0.11)
+#			http://search.cpan.org/~mrsam/Net-CIDR-0.11/CIDR.pm
+#		- Net::Pcap (v. 0.16)
+#			http://search.cpan.org/~saper/Net-Pcap/Pcap.pm
+#		- NetPacket (v. 0.42) 
+#			NetPacket::Ethernet, NetPacket::IP, NetPacket::TCP
+#			http://search.cpan.org/~yanick/NetPacket-v0.42.0/
+#		- Net::SMTP (v. libnet-1.22)
+#			http://search.cpan.org/~gbarr/libnet-1.22/Net/SMTP.pm
+#		- POSIX (v. 5.12.1)
+#			http://search.cpan.org/~jesse/perl-5.12.1/
+#		- Time::Local (v. 1.1901)
+#			http://search.cpan.org/~drolsky/Time-Local-1.1901/lib/Time/Local.pm
+#	License:
+#		Released under GNU GENERAL PUBLIC LICENSE version 3 (see "LICENSE.txt" 
+#		which must accompany this code)
+###############################################################################
+use File::Basename;
+use IO::Socket;
+use MIME::Lite;
+use Net::CIDR;
+use Net::Pcap;
+use NetPacket::Ethernet qw(:types);
+use NetPacket::IP qw(:ALL);
+use NetPacket::TCP;
+use NetPacket::UDP;
+use Net::SMTP;
+use POSIX qw(setsid);
+use Time::Local 'timelocal_nocheck';
+
+# Name:
+#   main
+# Pre:
+#	none
+# Post:
+#   - @ARGV is parsed to determine action
+#	- Action is taken based on arguments passed in
+#	- Exit to OS
+main();
+sub main
+{
+	my %env = 	(
+					version	=> 'DEV-1.x.y',
+					program	=> basename($0),
+					pid		=> $$,
+					success	=> 0,
+				);
+	my %arg = 	(
+					name				=> $env{program},
+					do_capture 			=> 0,
+					do_stdout			=> 0,
+					interface			=> undef,
+					snaplen				=> 64,
+					read_timeout		=> 5,
+					promiscuous			=> 0,
+					packet_count 		=> undef,
+					cfile				=> undef,
+					do_unique			=> 0,
+					do_regex_cap		=> 0,
+					regex_cap			=> undef,
+					regex_capall		=> undef,
+					do_learn 			=> 0,
+					do_comment			=> 1,
+					do_reverse_rule		=> 1,	
+					lfile				=> undef,
+					review_file			=> undef,
+					do_monitor			=> 0,
+					do_daemon			=> 0,
+					monitor_server		=> 0,
+					monitor_client		=> 0,
+					host				=> undef,
+					port				=> -1,
+					cache_file			=> undef,
+					sort_cache_date		=> 0,
+					do_cache_key_dst	=> 0,
+					do_notify			=> 0,
+					notify_file			=> undef,
+					notify_server		=> undef,
+					notify_mail			=> undef,
+					do_log				=> 0,
+					log_server			=> undef,
+					log_client			=> undef,
+					do_sort_learn		=> 0,
+					error_file			=> undef,
+					do_testre			=> 0,
+					testre_pattern		=> undef,
+					testre_expression	=> undef,
+					config_file			=> undef
+				);
+	my %learned = 	(
+						record_id		=> 0,
+						learned_line	=> undef,
+						learned_packet	=> undef,
+						is_authorized	=> 0,
+						src_ip			=> undef,
+						src_port		=> undef,
+						dst_ip			=> undef,
+						dst_port		=> undef,
+						user_comment 	=> undef,
+						learned_date	=> undef 
+					);
+	my $total_learned = 0;
+	
+	#parse command line and determine action
+    usage() if($#ARGV + 1 == 0);
+    for(my $i = 0; $i != $#ARGV + 1; $i++)
+    {	#options
+    	if($ARGV[$i] =~ m/^-C$|^--Config$/){
+    		if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
+    			$arg{config_file} = $ARGV[++$i];
+    			die "Configuration file ($arg{config_file}) cannot match program name ($arg{name}).\n"
+    				if($arg{name} eq $arg{config_file});
+    		}else{
+    			$arg{config_file} = "$arg{name}.config";
+    		}
+    		read_config($arg{config_file}, \%arg);
+    	}elsif($ARGV[$i] =~ m/^-s$|^--stdout$/){
+    		$arg{do_stdout} = 1;
+    	}elsif($ARGV[$i] =~ m/^-i$|^--interface$/){
+    		$arg{interface} = $ARGV[++$i];
+    		die "Must specify a valid interface with this option.\n"
+    			if(!defined($arg{interface}) || $arg{interface} !~ m/^\w+$/);
+    	}elsif($ARGV[$i] =~ m/^-S$|^--snaplen$/){
+    		$arg{snaplen} = $ARGV[++$i];	
+    		die "Invalid snaplen value. Must be between 38-65535.\n"
+    			if(($arg{snaplen}) < 38 || ($arg{snaplen}) > 65535);	
+    	}elsif($ARGV[$i] =~ m/^-rt$|^--read-timeout$/){
+    		$arg{read_timeout} = $ARGV[++$i];	
+    		die "Invalid read timeout value. Must be between 1-60000.\n"
+    			if($arg{read_timeout} < 1 || $arg{read_timeout} > 60000);	
+    	}elsif($ARGV[$i] =~ m/^-p$|^--promiscuous$/){
+    		$arg{promiscuous} = 1;
+    	}elsif($ARGV[$i] =~ m/^-pc$|^--packet-count$/){
+    		$arg{packet_count} = $ARGV[++$i];
+    		die "Invalid packet count specified. Must be a positive integer.\n"
+    			if($arg{packet_count} !~ m/^\d+$/ || $arg{packet_count} < 0);		
+    	}elsif($ARGV[$i] =~ m/^-cf$|^--capture-file$/){
+    		if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
+    			$arg{cfile} = $ARGV[++$i];
+    			die "Capture file ($arg{cfile}) cannot match program name ($arg{name}).\n"
+    				if($arg{name} eq $arg{cfile});
+    		}else{
+    			$arg{cfile} = "$arg{name}.cap";
+    		}
+    	}elsif($ARGV[$i] =~ m/^-u$|^--unique$/){
+    		$arg{do_unique} = 1;
+    	}elsif($ARGV[$i] =~ m/^-lf$|^--learn-file$/){
+    		if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
+    			$arg{lfile} = $ARGV[++$i];
+    			die "Learn file ($arg{lfile}) cannot match program name ($arg{name}).\n"
+    				if($arg{name} eq $arg{lfile});
+    			if(defined($arg{lfile}) && defined($arg{cfile})){
+    				die "Learn file ($arg{lfile}) cannot match capture file ($arg{cfile}).\n"
+    					if($arg{lfile} eq $arg{cfile});
+    			}
+    		}else{
+    			$arg{lfile} = "$arg{name}.learn";
+    		}
+    	}elsif($ARGV[$i] =~ m/^-nc$|^--no-comment$/){
+    		$arg{do_comment} = 0;
+    	}elsif($ARGV[$i] =~ m/^-nr$|^--no-reverse$/){
+    		$arg{do_reverse_rule} = 0;
+    	}elsif($ARGV[$i] =~ m/^-re$|^--regex$/){
+    		if(defined($ARGV[$i+1])){
+    			@{$arg{regex_capall}} = ();
+    			$arg{do_regex_cap} = 1;
+    			$arg{regex_cap} = $ARGV[++$i];
+    			my @regex_cap = split(/,/, $arg{regex_cap});
+    			my %tmp = map {$_, 1} @regex_cap;
+    			my @unique = keys(%tmp);
+    			push(@{$arg{regex_capall}}, @unique);
+    		}else{
+    			die "Option requires a valid regular expression.\n";
+    		}
+    	}elsif($ARGV[$i] =~ m/^--cache-file$/){
+    		if(defined($ARGV[$i+1]) && ($ARGV[$i+1] =~ m/.*?\w+.*?$/)){
+    			$arg{cache_file} = $ARGV[++$i];
+    			if($arg{cache_file} =~ m/^-{1,2}\w+/){
+    				$arg{cache_file} = "$arg{name}.cache";
+    			}
+    			die "Capture file ($arg{cache_file}) cannot match program name ($arg{name}).\n"
+    				if($arg{name} eq $arg{cache_file});
+    		}else{
+    			$arg{cache_file} = "$arg{name}.cache";
+    		}
+    	}elsif($ARGV[$i] =~ m/^--sort-cache-date$/){
+    		$arg{sort_cache_date} = 1;
+    	}elsif($ARGV[$i] =~ m/^--cache-key-dst$/){
+    		$arg{do_cache_key_dst} = 1;
+    	}elsif($ARGV[$i] =~ m/^-n$|^--notify$/){
+    		$arg{do_notify} = 1;
+    		if($ARGV[$i+1] =~ m/^out=(.*?\w+.*?)$/){
+				$arg{notify_file} = $1;
+				die "Notify file ($arg{notify_file}) cannot match program name ($arg{name}).\n"
+					if($arg{name} eq $arg{notify_file});
+				$ARGV[++$i];
+			}
+			if($ARGV[$i+1] =~ m/(.*)=(.*)/){
+				if($2 =~ m/client|server/){
+					$arg{notify_file} = "$arg{name}.message";
+					next;
+				}else{
+					$arg{notify_server} = $1;
+					my @alias = split(/,/, $2);
+					foreach(@alias)
+					{
+						die "Invalid e-mail address format: $_\n" unless(/^\w+.?\w+?\@\w+\.\w+$/);
+					}
+					$arg{notify_mail} = "@alias\n";
+					$ARGV[++$i];
+				}
+			}
+			$arg{notify_file} = "$arg{name}.message" if(! defined($arg{notify_file}));
+    	}elsif($ARGV[$i] =~ m/^--log=server\b/){
+			$arg{do_log} = 1;
+			if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
+				$arg{log_server} = $ARGV[++$i];
+				die "Server log file ($arg{log_server}) cannot match program name ($arg{name}).\n"
+					if($arg{name} eq $arg{log_server});
+			}else{
+				$arg{log_server} = "$arg{name}.server.log" if(! defined($arg{log_server}));
+			}
+		}elsif($ARGV[$i] =~ m/^--log=client\b/){
+			$arg{do_log} = 1;
+			if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
+				$arg{log_client} = $ARGV[++$i];
+				die "Client log file ($arg{log_client}) cannot match program name ($arg{name}).\n"
+					if($arg{name} eq $arg{log_client});
+			}else{
+				$arg{log_client} = "$arg{name}.client.log" if(! defined($arg{log_client}));
+			}
+		}elsif($ARGV[$i] =~ m/^-d$|^--daemon$/){
+			$arg{do_daemon} = 1;
+			$arg{error_file} = "$arg{name}.error.log";
+    	}else{	#commands
+    		if($ARGV[$i] =~ m/^-li$|^--list-interfaces$/){
+    			usage() if($#ARGV + 1 != 1);
+				list_interfaces();
+				exit(0);
+			}elsif($ARGV[$i] =~ m/^-c$|^--capture$/){
+				$arg{do_capture} = 1;
+				get_default_interface(\$arg{interface}) if(!defined($arg{interface}));
+				$arg{packet_count} = 0 if(!defined($arg{packet_count}));
+				$env{success} = ($env{success} == 1) ? 0 : 1; 
+			}elsif($ARGV[$i] =~ m/^-l$|^--learn$/){
+				$arg{do_learn} = 1;
+				$arg{lfile} = "$arg{name}.learn" if(!defined($arg{lfile}));
+				$arg{review_file} = "$arg{name}.review" if(!defined($arg{review_file}));
+				$env{success} = ($env{success} == 1) ? 0 : 1;
+			}elsif($ARGV[$i] =~ m/^-m$|^--monitor$/){
+				$arg{do_monitor} = 1;
+				$ARGV[++$i];
+				if($ARGV[$i] eq "--server"){
+					$arg{monitor_server} = 1;
+				}elsif($ARGV[$i] eq "--client"){
+					$arg{monitor_client} = 1;
+				}
+				die "Missing required monitor command argument: --server or --client\n"
+					if(($arg{monitor_server} == 0) && ($arg{monitor_client} == 0));
+				$arg{host} = $ARGV[++$i];
+				die "Invalid monitor command argument or order:  --server|--client <host> <port>\n"
+					if($arg{host} =~ m/^[0-9]{1,5}$/ || length($arg{host}) == 0);
+				$arg{port} = $ARGV[++$i];
+				die "Invalid monitor command argument or order:  --server|--client <host> <port>\n"
+					if(length($arg{port}) == 0);
+				die "Invalid port - must be between 1-65535.\n" 
+					if($arg{port} < 1 | ($arg{port}) > 65535);
+				$arg{packet_count} = 0 if(!defined($arg{packet_count}));
+				if($arg{monitor_server}){
+					$arg{cache_file} = "$arg{name}.cache" if(!defined($arg{cache_file}));
+				}
+				if($arg{monitor_client}){
+					$arg{lfile} = "$arg{name}.learn" if(!defined($arg{lfile}));
+					get_default_interface(\$arg{interface}) if(!defined($arg{interface}));
+				}
+				$env{success} = ($env{success} == 1) ? 0 : 1;
+			}elsif($ARGV[$i] =~ m/^--sort-learn=(auth|unauth)\b$/){
+				usage() if($#ARGV + 1 > 2);
+				$arg{do_sort_learn} = 1;
+				if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
+					$arg{lfile} = $ARGV[++$i];
+					die "Learn file ($arg{lfile}) cannot match program name ($arg{name}).\n"
+						if($arg{name} eq $arg{lfile});
+				}else{
+					$arg{lfile} = "$arg{name}.learn" if(!defined($arg{lfile}));
+				}
+				$sortopt = $1;
+				$env{success} = ($env{success} == 1) ? 0 : 1;
+			}elsif($ARGV[$i] =~ m/^--test-re$/){
+				usage() if($#ARGV + 1 != 3);
+				$arg{do_testre} = 1;
+				$arg{testre_pattern} = $ARGV[++$i];
+				$arg{testre_expression} = $ARGV[++$i];
+				$env{success} = ($env{success} == 1) ? 0 : 1;
+			}elsif($ARGV[$i] =~ m/^-gr$|^--get-range$/){
+				usage() if($#ARGV + 1 != 2);
+				die "Invalid CIDR format. Expecting a valid CIDR block (ex: 192.168.0.0/16).\n"
+					if($ARGV[++$i] !~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/);
+				lookup_cidr_range(0, 1, $ARGV[$i], 0, 0);
+			}elsif($ARGV[$i] =~ m/^-gc$|^--get-cidr$/){
+				usage() if($#ARGV + 1 != 2);
+				die "Invalid IP range. Expecting a valid range (ex: 192.168.0.0-192.168.255.255).\n"
+					if $ARGV[++$i] !~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}
+										-\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/x;
+				lookup_cidr_range(0, 2, $ARGV[$i], 0, 0);
+			}elsif($ARGV[$i] =~ m/^-h$|^--help$/){
+				$arg{config_file} = "$arg{name}.config";
+				$arg{cfile} = "$arg{name}.cap";
+				$arg{lfile} = "$arg{name}.learn";
+				$arg{cache_file} = "$arg{name}.cache";
+				$arg{log_server} = "$arg{name}.server.log";
+				$arg{log_client} = "$arg{name}.client.log";
+				$arg{notify_file} = "$arg{name}.message";
+				$arg{error_file} = "$arg{name}.error.log";
+				usage(\%arg);
+			}elsif($ARGV[$i] =~ m/^-v$|^--version$/){
+				print STDERR "version: $env{version}\n";
+				exit(0);
+			}else{
+				usage();
+			}
+		}
+    }
+    
+	#take action based on arguments passed
+	if($env{success}){
+		if($arg{do_sort_learn}){
+			if((-e $arg{lfile}) && (! -z $arg{lfile})){
+				my @comments;
+				print STDERR "Processing $arg{lfile}... ";
+				get_learned($arg{lfile}, \%learned, \$total_learned, \@comments);
+				print STDERR "success.\n";
+				sort_learned($arg{lfile}, $sortopt, \%learned, \@comments);
+			}else{
+				die "File ($arg{lfile}) does not exist or does not contain data. Aborting.\n";
+			}
+		}elsif($arg{do_testre}){
+			print "$arg{name} will test the following pattern and regular expression\n";
+			if(test_regex($arg{testre_pattern}, $arg{testre_expression})){
+				print "Result: Succeeded\n";
+			}else{
+				print "Result: Failed\n";
+			}
+		}elsif($arg{do_capture}){
+			if(!defined($arg{cfile})){
+				$arg{cfile} = "$arg{name}.cap";
+				print STDERR "Capture file not defined.\n";	
+			}
+			print STDERR "$arg{name} will attempt to:\n";
+			print STDERR "-> capture traffic to $arg{cfile}\n";
+			print STDERR "-> capture unique traffic\n" if($arg{do_unique});
+			if($arg{do_stdout}){
+				if($arg{do_unique}){
+					print STDERR "-> send unique traffic to stdout (along with $arg{cfile})\n";
+				}else{
+					print STDERR "-> send traffic to stdout (along with $arg{cfile})\n";
+				}
+			}else{
+				print STDERR "-> suppress traffic from stdout stream\n";
+			}
+			print STDERR "-> ensure traffic matches: \"$arg{regex_cap}\"\n" if($arg{do_regex_cap});
+			if($arg{promiscuous}){
+				print STDERR "-> listen in promiscuous mode\n";
+			}else{
+				print STDERR "-> avoid promiscuous mode\n";
+			}
+			capture(\%arg, $env{pid});
+		}elsif($arg{do_learn}){
+			if(!defined($arg{cfile})){
+				$arg{cfile} = "$arg{name}.cap";
+				print STDERR "Capture file not defined. Will learn from $arg{cfile} instead.\n";	
+			}
+			if(defined($arg{cfile})){
+				die "File: $arg{cfile} does not exist. Try capturing some packets first.\n" 
+					if(! -e $arg{cfile});
+				die "File: $arg{cfile} exists but is not a plain file. Check file type/bits.\n" 
+					if(! -f $arg{cfile});
+				die "File: $arg{cfile} exists but is empty. Try capturing some packets first.\n"
+					if(-z $arg{cfile});
+			}
+			die "File: $arg{lfile} exists but is not a plain file. Check file type/bits.\n" 
+				if(-e $arg{lfile} && ! -f $arg{lfile});
+			print STDERR "$arg{name} will attempt to:\n-> read from $arg{cfile}\n";
+			print STDERR "-> write learned traffic to $arg{lfile}\n";
+			print STDERR "-> suppress user comments while learning\n" 
+				if(!$arg{do_comment});
+			print STDERR "-> suppress creating reverse rules while learning\n" 
+				if(!$arg{do_reverse_rule});
+			if((-e $arg{lfile}) && (! -z $arg{lfile})){
+				print STDERR "Processing $arg{lfile}... ";
+				get_learned($arg{lfile}, \%learned, \$total_learned); 
+				print STDERR "success.\n";
+			}
+			learn(\%arg, \%learned, $total_learned);
+			print STDERR "$arg{name} has finished learning.\n";
+		}elsif($arg{do_monitor}){
+			if($arg{monitor_server}){
+				die "Interface option not necessary when creating a monitoring server.\n"
+					if(defined($arg{interface}));
+				die "Unique option not necessary when creating a monitoring server.\n"
+					if(defined($arg{do_unique}));
+				daemonize(\$env{pid}, $arg{error_file}) if($arg{do_daemon});
+				monitor_server(\%arg, $env{pid});
+				print STDERR "$arg{name} (server pid: $env{pid}) has finished monitoring.\n"
+					if(($arg{do_stdout}) && (! $arg{do_daemon}));
+			}elsif($arg{monitor_client}){
+				if((-e $arg{lfile}) && (! -z $arg{lfile})){
+					print STDERR "Processing $arg{lfile}... " unless($arg{do_daemon});
+					get_learned($arg{lfile}, \%learned, \$total_learned);
+					print STDERR "success.\n" unless($arg{do_daemon});
+				}else{
+					my $choice;
+					for(;;)
+					{
+						print STDERR "\n-- Warning: No learned data loaded\n\n";
+						print STDERR "All captured traffic will be considered unauthorized\n";
+						print STDERR "and sent to the server accordingly. This could cause\n";
+						print STDERR "an enormous amount of traffic and notification messages.\n";
+						print STDERR "\nThis is *most* likely not what you intended. If you forgot\n";
+						print STDERR "to include your learn file, see: $arg{name} --help.\n";
+						print STDERR "\nPlease confirm to continue [yes/no]: ";
+						$choice = <STDIN>;
+						chomp($choice); 
+						if($choice =~ m/^no?/i){
+							die("\nYour answer was expected. Please try learning traffic first or\n",
+								"see: $arg{name} --help for assistance on specifying an existing ",
+								"learn file.\n");
+						}elsif($choice =~ m/^y(es)?/i){
+							print STDERR "\nOkay - Will continue with starting client monitor.\n";
+							last;
+						}
+					} 
+				}
+				daemonize(\$env{pid}, $arg{error_file}) if($arg{do_daemon});
+				monitor_client(\%arg, $env{pid}, \%learned, \$total_learned);
+				print STDERR "$arg{name} (client pid: $env{pid}) has finished monitoring.\n"
+					if(($arg{do_stdout}) && (! $arg{do_daemon}));
+			}else{
+				die "$arg{name} does not indicate a server or client flag set. Quitting.\n";
+			}
+		}
+	}else{
+		usage();
+	}
+	
+	exit(0);
+}
+# Name:
+#   read_config
+# Pre:
+#	$	= scalar representing the configuration file to read
+#	\%	= reference to a hash to fill with user options
+#
+#	Note:
+#		Only useful for capture, learn, or monitor modes. Any option specified 
+#		on the command-line overwrites the corresponding configuration option.
+# Post:
+#	Reference filled with option values or dies on error (can't open for read)
+sub read_config
+{
+	my ($config_file, $arg) = @_;
+
+	open(FH_IN, $config_file) || die "Error opening file: $config_file. $!\n";
+	while(<FH_IN>)
+	{	
+		next if($_ =~ m/^\s$/g || $_ =~ m/^#/);
+		if(m/^CAPTURE_FILE_PATH=(.*)$/){
+			$arg->{cfile} = $1;
+		}elsif(m/^LEARN_FILE_PATH=(.*)$/){
+			$arg->{lfile} = $1;
+		}elsif(m/^REVIEW_FILE_PATH=(.*)$/){
+			$arg->{review_file} = $1;
+		}elsif(m/^NOTIFY_FILE_PATH=(.*)$/){
+			$arg->{notify_file} = $1;
+		}elsif(m/^CACHE_FILE_PATH=(.*)$/){
+			$arg->{cache_file} = $1;
+		}elsif(m/^SERVER_LOG_FILE_PATH=(.*)$/){
+			$arg->{log_server} = $1;
+		}elsif(m/^CLIENT_LOG_FILE_PATH=(.*)$/){
+			$arg->{log_client} = $1;
+		}elsif(m/^ERROR_LOG_FILE_PATH=(.*)$/){
+			$arg->{error_file} = $1;
+		}
+	}
+	close(FH_IN);
+}
+# Name:
+#   list_interfaces
+# Pre:
+#	none
+#
+#	Note:
+#		There may be some interfaces that are not discovered. This program 
+#		has no control over which interfaces are detected - it is up to 
+#		Net::Pcap::pcap_findalldevs()
+# Post:
+#	All discovered interfaces displayed or dies on error
+sub list_interfaces
+{
+	my %device_info;
+	my $error;
+	my @devices;
+
+	@devices = Net::Pcap::pcap_findalldevs(\%device_info, \$error);
+	if($#devices + 1 != 0){
+		foreach my $device (@devices)
+		{
+			print "$device: $device_info{$device}\n";
+		}
+	}else{
+		if(defined($error)){
+			die "Unable to list any network devices - $error\n";
+		}else{
+			die "Unable to list any network devices - Unknown error.\n";
+		}
+	}
+}
+# Name:
+#   get_default_interface
+# Pre:
+#	\$ = reference to a scalar intended to hold the default interface
+# Post:
+#	Default interface or dies on error or if unable to determine a default
+sub get_default_interface
+{
+	my ($device) = @_;
+	my $error;
+	
+	unless(defined($$device)) 
+	{
+    	$$device = Net::Pcap::lookupdev(\$error);
+    	if(!defined($$device)){
+    		if(defined($error)){
+				die "Unable to determine a default network device - $error\n";
+			}else{
+				die "Unable to determine a default network device - Unknown error.\n";
+			}
+		}
+	}
+}
+# Name:
+#   lookup_cidr_range
+# Pre:
+#	$	= scalar representing if looking up a packet amongst a given CIDR
+#	$	= scalar representing a flag to determine what to do IP range/cidr 
+#		conversion
+#	$	= scalar representing a CIDR block or IP range
+#	\@	= reference to an array holding CIDR blocks to check against a given IP 
+#		packet
+#	\$	= reference to a scalar holding the result after checking an IP against
+#		the CIDR array reference: 1 = found; 0 = not found
+# Post:
+#	Depending on lookup packet flag:
+#		lookup of IP is conducted CIDR array reference
+#	Depending on flag:
+#		1 = given a CIDR block, an IP range is outputted to STDERR
+#		2 = given an IP range, a CIDR block is outputted to STDERR
+sub lookup_cidr_range
+{
+	my ($lu_packet, $flag, $input, $cidr, $found) = @_;
+	my @result;
+	
+	if($lu_packet){
+		if(Net::CIDR::cidrlookup($input, @{$cidr})){
+        	$$found = 1;
+        }else{
+        	$$found = 0;
+        }
+	}else{
+		if($flag == 1){
+			@result = Net::CIDR::cidr2range($input);
+            print STDERR "IP range:\n";
+		}else{
+			@result = Net::CIDR::range2cidr($input);
+             print STDERR "CIDR block:\n";
+		}
+		foreach(@result)
+		{
+			print STDERR "$_\n";
+		}
+		exit(0);
+	}
+}
+# Name:
+#   create_device
+# Pre:
+#	$ 	= scalar representing the interface (device) to listen on
+#	$	= scalar representing the number of bytes to read from the captured 
+#		packet
+#	$ 	= scalar representing whether or not to put the device into 
+#		promiscuous mode
+#	$	= scalar representing the read timeout in milliseconds
+# Post:
+#	Returns packet capture descriptor or dies on error
+sub create_device
+{
+	my ($interface, $snaplen, $promiscuous, $read_timeout) = @_;
+	my $pcap;
+	my $error;
+
+	$pcap = Net::Pcap::open_live($interface, $snaplen, $promiscuous, 
+		$read_timeout, \$error);
+		
+	unless(defined($pcap)){
+    	die "failed. $error\n";
+	}
+	
+	return $pcap;
+}
+# Name:
+#   capture
+# Pre:
+#	\%	= reference to a hash with at least the following fields:
+#		packet_count 	= holds how many packets to grab before quitting
+#		do_unique 		= 0 don't grab unique packets; 1 grab unique packets
+#		cfile 			= the capture file to write the traffic to
+#		name			= the name of the program conducting the capture
+#		interface 		= the interface to create the packet capture descriptor 
+#						on
+#		promiscuous		= 0 will only grab packets destined for the running 
+#						host; 1 will grab packets regardless of which host is 
+#						they are destined for 
+#		do_regex_cap	= 0 will not do a regular expression match; 1 will
+#		regex_cap		= the regular expression to ensure traffic matches 
+#						against only used if do_regex_cap = 1
+#		do_stdout		= 0 will not output traffic to stdout (console); 1 
+#						will output
+#	$	= scalar representing the current PID
+# Post:
+#	Finished capturing packets for capture mode
+sub capture
+{	
+	my ($arg, $pid) = @_;
+	my $match;
+	my $pcap;
+	my $total_net_packets = 0;
+	my $total_ip_packets = 0;
+	my $packet_count = 0;
+	my $packet;	
+	my $traffic; 
+	my %data;
+	my $ucount = ($arg->{do_unique} == 0) ? "Not enabled" : 0;
+	my $packet_max = ($arg->{packet_count} == 0) ? "Indefinite amount" : $arg->{packet_count};
+	
+	$SIG{USR1} = sub
+	{
+		print STDERR "\n\n-- User signal caught (pid: $pid).\n";
+		$ucount = keys(%data) if($arg->{do_unique});
+		print STDERR "\nTotal packets:\n";
+		print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
+		print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
+		print STDERR "$arg->{name} (pid: $pid) continuing with capturing traffic.\n\n";
+	};
+	
+	$SIG{TERM} = sub
+	{
+		print STDERR "\n-- Termination signal caught. Wrapping up...\n";
+		$ucount = keys(%data) if($arg->{do_unique});
+		print STDERR "\nTotal packets:\n";
+		print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
+		print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
+		write_capture_data($arg->{cfile}, \%data, $arg->{do_unique}) if($packet_count > 0);
+		Net::Pcap::close($pcap);
+		print STDERR "$arg->{name} (pid: $pid) has finished capturing traffic.\n";
+		exit(0);
+	};
+	
+	$SIG{INT} = sub
+	{
+		print STDERR "\n-- Interrupt signal caught. Wrapping up...\n";
+		$ucount = keys(%data) if($arg->{do_unique});
+		print STDERR "\nTotal packets:\n";
+		print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
+		print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
+		write_capture_data($arg->{cfile}, \%data, $arg->{do_unique}) if($packet_count > 0);
+		Net::Pcap::close($pcap);
+		print STDERR "$arg->{name} (pid: $pid) has finished capturing traffic.\n";
+		exit(0);
+	};
+	
+	#create packet capture descriptor
+	print STDERR "\n$arg->{name}:\n";
+	print STDERR "|--> Running as pid: $pid\n";
+	print STDERR "|--> Capturing $arg->{snaplen} byte(s)/packet...\n";
+	print STDERR "|--> Read timeout of $arg->{read_timeout} millisecond(s)\n";
+	print STDERR "|--> Binding to interface: $arg->{interface}... ";
+	$pcap = create_device($arg->{interface}, $arg->{snaplen}, $arg->{promiscuous}, 
+		$arg->{read_timeout});
+	print STDERR "success.\n";
+	
+	#capturing
+	if($arg->{promiscuous}){
+		print STDERR "|--> Listening (promiscuous mode = Yes)...\n";
+	}else{
+		print STDERR "|--> Listening (promiscuous mode = No)...\n";
+	}
+	print STDERR "\nNote:\n";
+	print STDERR "|--> To stop capturing at any time, press 'ctrl + c'\n";
+	print STDERR "|--> You can also send a TERM or INT signal to pid: $pid\n";
+	print STDERR "|--> To display current capture progress stats, send a USR1\n";
+	print STDERR "|--> signal to pid: $pid\n\n";
+	
+	
+	for(;;)
+	{
+		get_capture_packet($pcap, \$packet, \$traffic, \$total_net_packets, 
+			\$total_ip_packets, 0);
+		next if($traffic == 0);
+		if($arg->{do_regex_cap}){
+			$match = 0;
+    		foreach my $re (@{$arg->{regex_capall}})
+    		{ 
+    			if($traffic =~ m/$re/i){
+    				$match = 1;
+    				last;
+    			}
+    		}
+    		next if(! $match);
+    	}
+		if(($packet_max > 0) && ($packet_count >= $packet_max)){
+			$ucount = keys(%data) if($arg->{do_unique});
+			print STDERR "\nTotal packets:\n";
+			print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
+			print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
+			write_capture_data($arg->{cfile}, \%data, $arg->{do_unique});
+			last;
+		}else{
+			if($arg->{do_unique}){
+				print "$traffic\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				$data{$traffic}++;
+			}else{
+				print "$traffic\n" if($arg->{do_stdout});
+				$data{$packet_count} = $traffic;
+			}
+		}
+		$packet_count++;
+	}
+	print STDERR "$arg->{name} has finished capturing traffic.\n";
+}
+# Name:
+#   get_capture_packet
+# Pre:
+#	$ 	= scalar representing the created capture descriptor
+#	\$	= reference to a scalar holding the raw packet information
+#	\$	= reference to a scalar holding the parsed traffic
+#	\$	= reference to a scalar holding the total packets captured regardless
+#		of type
+#	\$	= reference to a scalar holding the total IP packets captured
+#	\$	= reference to the tcp flag constant for the captured packet	
+#
+#	Note:
+#		This function is designed to be called in a loop once the capture 
+#		descriptor has been created.
+#
+#		The reference to the total packet count and total IP count should 
+#		be initialized to zero, prior to calling this function. This function 
+#		does not initialize them to zero because it is designed to be called in 
+#		a loop.
+#
+#		This function takes care of relaying the flags (as well as ANDing 
+#		certain combinations) due to the design of netcap. One mnemonic for 
+#		URG, ACK, PSH, RST, SYN, and FIN:
+#
+#		"Unskilled Attackers Pester Real Security Folks"
+#
+#		This order relates to the binary order:
+#		Bit #:	8	7	6	5	4	3	2	1	*First 6 bits == original flags
+#		Value:	128	64	32  16	8	4 	2	1
+#				C	E	U	A	P	R	S	F
+#				W	C	R	C	S	S	Y	I
+#				R	E	G	K	H	T	N	N
+#
+#		The key is the value contained in the NetPacket::TCP object for the 
+#		given packet. Note that the source has these as hexadecimal constants. 
+#		This function uses the decimal equivalent.
+# Post:
+#	Finished getting raw captured packets off the wire and parsing based on the 
+#	ethernet type; Returns traffic via reference or 0 if unsupported.
+sub get_capture_packet
+{
+    my ($pcap, $packet, $traffic, $total_packet_count, $total_ip_count, $tcp_flag) = @_;
+    my %hdr;
+    my $eth_data;
+    my $flag;
+    my %eth;
+    my %ip;
+    my %tcp;
+	my %tcp_flags = (
+						1 	=> "FIN",
+						2 	=> "SYN",
+						4 	=> "RST",
+						8 	=> "PSH",
+						16 	=>	"ACK",
+						17	=> "FIN/ACK",
+						18	=> "SYN/ACK",
+						20	=> "RST/ACK",
+						24	=> "PSH/ACK",
+						32 	=> "URG",
+						64 	=> "ECE",		#extension to TCP/IP (rfc3168)
+						128 => "CWR",		#extension to TCP/IP (rfc3168)
+					);
+	
+	#get raw packet off the wire
+	$$packet = Net::Pcap::next($pcap, \%hdr);
+	
+    #strip and decode ethernet encapsulation of captured packet 
+    $eth_data = NetPacket::Ethernet::strip($$packet);
+    $eth = NetPacket::Ethernet->decode($$packet);
+    
+	#determine packet type and parse
+    if($eth->{type} == ETH_TYPE_IP){
+    	$ip = NetPacket::IP->decode($eth_data);
+    	$tcp = NetPacket::TCP->decode($ip->{data});
+    	$$traffic = "$ip->{src_ip}:$tcp->{src_port} > $ip->{dest_ip}:$tcp->{dest_port}";
+    	if($tcp->{hlen} > 0){
+    		$flag = $tcp->{flags};
+    		$$tcp_flag = (exists $tcp_flags{$flag}) ? $tcp_flags{$flag} : "tcp" ;
+    		$$tcp_flag .= " [bits: $flag]";
+    	}else{
+    		$$tcp_flag = "udp [bits: none]";
+    	}
+    	$$total_ip_count++;
+	}else{
+		$$traffic = 0;
+	}
+	$$total_packet_count++;
+}
+# Name:
+#	write_capture_data
+# Pre:
+#	$ 	= scalar representing the file to write the data to
+#	\% 	= reference to a hash holding the data to write
+#	$	= scalar representing whether to output unique traffic only
+# Post:
+#	Data written to a file and stdout (console) if flagged or
+#	returns if data hash reference is empty
+sub write_capture_data
+{
+	my ($cfile, $data, $do_unique) = @_;
+	
+	if(! %{$data}){
+		print STDERR "\nWarning: no data to write - aborting.\n";
+		return;
+	}
+	
+	if($do_unique){
+		print STDERR "Writing unique packets to $cfile... ";
+	}else{
+		print STDERR "Writing packets to $cfile... ";
+	}
+	
+	open(FH_OUT, ">$cfile") || die "Error opening file: $cfile. $!\n";
+	foreach(keys %{$data})
+	{
+		if($do_unique){
+			print FH_OUT "$_\n";
+		}else{
+			print FH_OUT "$data->{$_}\n";
+		}
+	}
+	close(FH_OUT);
+	print STDERR "data written.\nSee $cfile to view traffic.\n";
+}
+# Name:
+#	sort_learned
+# Pre:
+#	$ 	= scalar representing the file to write the learned data
+#	$ 	= scalar representing what order to sort:
+#		auth = sort by authorized rules first 
+#		unauth = sort by unauthorized rules first
+#	\%	= scalar representing whether to output unique traffic only
+#	\@	= reference to an array holding any commented lines from the learned 
+#		file
+#
+#	Note:		
+#		This function does NOT subsequently remove the backup file after 
+#		sorting because the user may not want to lose original. If the 
+#		primary backup file exists and contains data, subsequent backups 
+#		will have the epoch value appended.
+#
+#		Data is backed up in its original form (by record id). Next, data 
+#		is sorted by date in descending order, followed by the sort 
+#		option provided. Finally, the remaining data (that which was not 
+#		specified by the sort option) is appended.
+# Post:
+#	Learned data sorted.
+sub sort_learned
+{
+	my ($lfile, $sortopt, $learned, $comments) = @_;
+	my $bu_file = "$lfile.bak";
+	my $tm;
+	my $choice;
+	my @dt;
+	my @remaining;
+	
+	if(-e $bu_file && (! -z $bu_file)){
+		$tm = localtime();
+		parse_datetime($tm, \@dt);
+		get_epoch(\@dt, \$tm);
+		$bu_file .= "-$tm";
+	}
+	
+	#backup original
+	open(FH_OUT, ">$bu_file") || die "Error opening file: $bu_file for write. $!\n";
+	print "Backing up learned data... ";
+	foreach(@{$comments})
+	{
+		print FH_OUT;
+	}
+	foreach $el (sort{$a->{record_id} <=> $b->{record_id}} values %{$learned})
+	{
+		print FH_OUT "$el->{learned_line}\n";
+	}
+	print "done.\n";
+	close(FH_OUT);
+	
+	#re-create original
+	open(FH_OUT, ">$lfile") || die "Error opening file: $lfile for write. $!\n";
+	print "Sorting learned data... ";
+	foreach(@{$comments})
+	{
+		print FH_OUT;
+	}
+	foreach $el (sort{$b->{epoch} <=> $a->{epoch}} values %{$learned})
+	{
+		if($sortopt eq "unauth"){
+			if($el->{is_authorized}){
+				push(@remaining, "$el->{learned_line}\n"); 
+				next;
+			}else{
+				print FH_OUT "$el->{learned_line}\n";
+			}
+		}else{
+			if(! $el->{is_authorized}){
+				push(@remaining, "$el->{learned_line}\n"); 
+				next;
+			}else{
+				print FH_OUT "$el->{learned_line}\n";
+			}
+		}
+	}
+	
+	#remaining (based on sort option)
+	foreach(@remaining)
+	{
+		print FH_OUT;
+	}
+	
+	print "done.\n";
+}
+# Name:
+#   test_regex
+# Pre:
+#	$	= scalar representing the pattern to test
+#	$	= scalar representing the regular expression 
+# Post:
+#	Pattern validated against expression; match flag returned 
+#	(1 = true; 0 = false)
+sub test_regex
+{
+	my ($pattern, $expression) = @_;
+	my ($p_src, $p_prt, $e_src, $e_prt);
+	my $match = 0;
+	
+	print "\nNote:\nKnowledge of regular expression syntax is left up to the user. Follow\n";
+	print "the general guidelines below to help build a compliant rule using an expression.\n";
+	
+	printf("\n%s%s%s%s%s%s%s%s\n", 
+			"- <packet_pattern> must be a valid IPv4 format followed by a colon and\n",
+			"port number\n",
+			"- CIDR blocks and regular expressions are only valid for <expression>\n", 
+			"- CIDR blocks can only contain regular expressions for their ports\n",
+			"- Simulate all values in a given octet with: \\d{1,3} or .*\n",
+			"- Simulate all values for ports with: \\d{1,5} or *\n",
+			"- Escape periods (e.g., \\.) that may prefix the following range/quantifier: .*\n",
+			"- It may be necessary to surround <expression> with quotes\n");
+			
+	print "Pattern: $pattern\nExpression: $expression\n";
+	
+	if($expression =~ m /(a|c|[e-z])/i){
+		print "Reason: Invalid alpha charachter found in expression. Only \\b and \\d is allowed.\n";
+		return $match;
+	}else{
+		if($pattern !~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}$/){
+			print "Reason: Invalid format found in <packet_pattern> argument.\n";
+			return $match;
+		}else{
+			if(index($expression, "/") != -1){
+				if($expression !~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:.*$/){
+					print "Reason: Invalid format found with CIDR in <expression> argument.\n";
+					return $match;
+				}
+			}else{
+				if($expression !~ m/.*\..*\..*\..*:.*:*/){
+					print "Reason: Invalid format found with IPv4 regex in <expression> argument.\n";
+					return $match;
+				}
+			}
+		}
+		($p_src, $p_prt) = split(/:/, $pattern);
+		($e_src, $e_prt) = split(/:/, $expression);
+		if(index($e_src, "/") != -1){
+			print "|--> Expression is using CIDR.\n|--> Checking if $p_src in range... ";
+			my $found = 0;
+			@cidr = ("$e_src");
+			lookup_cidr_range(1, 0, $p_src, \@cidr, \$found);
+			if($found){
+				print "Yes.\n|--> Checking for port match... ";
+				if(index($e_prt, "*") != -1){
+					print "Yes.\n";
+					$match = 1;
+				}else{
+					if($p_prt =~ m/^$e_prt/){
+						print "Yes.\n";
+						$match = 1;
+					}else{
+						print "No.\n";
+						return $match;
+					}
+				}
+			}else{
+				print "No.\n";
+				return $match;
+			}
+		}else{
+			print "|--> Expression is using standard IP or simulated CIDR.\n";
+			print "|--> Checking for IP match... ";
+			if($p_src =~ m/$e_src/){
+				print "Yes.\n|--> Checking for port match... ";
+				if(index($e_prt, "*") != -1){
+					print "Yes.\n";
+					$match = 1;
+				}else{
+					if($p_prt =~ m/^$e_prt/){
+						print "Yes.\n";
+						$match = 1;
+					}else{
+						print "No.\n";
+						return $match;
+					}
+				}
+			}else{
+				print "No.\n";
+				return $match;
+			}
+		}
+	}
+	
+	return $match;
+}
+# Name:
+#	get_learned
+# Pre:
+#	$	= scalar representing the file to read for the previous learned traffic
+#	\%	= reference to a hash representing the learned traffic
+#	\$	= reference to a scalar representing the total number of records 
+#		previously learned
+#	\@	= reference to an array that will hold any commented lines
+#
+#	Note: 
+#		It is necessary to empty the hash so garbage records do not exist if 
+#		previously inititalized, such as: %{$learned} = ();
+#
+#		This function does its best to validate the file format required for 
+#		learned entries. The required format is:
+#
+#		** the below lines are split on multiple lines for brevity only
+#
+#		[!];src[/mask]:prt > dst[/mask]:prt;[comment]; \
+#			[Day] Mon  dd hh:mm:ss YYYY;<0|1>
+#
+#		Example:
+#		!;192.168.0.10:* > 192.168.0.50:22;No SSH;Jun  2 16:20:05 2010;0
+#		 ;172.16.0.0/12:* > 0.0.0.0/0:80;HTTP OK;Wed Jun  2 16:20:05 2010;0
+#		!;172.21.107.(34|82)\b:\d{1,5} > 172.2[12].*.(2|10)\b:22;No SSH; \
+#			Mon Jun 14 16:26:55 2010;1
+#		;172.21.100.*:\d{1,5} > 172.2[12].*.(2|10)\b:13[789];NetBIOS; \
+#			Mon Jun 14 16:26:55 2010;1
+#
+#		One caveat is the following entry (assume a user manually entered the 
+#		following):
+#
+#		;172.21.107.34:* > 0.0.0.0/0:80;HTTP;Sun Jun  6 15:31:31 2010;0
+#		;0.0.0.0:80 > 172.21.107.34:*;HTTP;Sun Jun  6 15:31:31 2010;0
+#	
+#		Notice the entry: 0.0.0.0:80 is probably not what was intended. However, 
+#		because 0.0.0.0:80 is valid for an IP/port format, it is accepted. Now, 
+#		if say the following packet is captured:
+#
+#		74.125.0.32:80 > 172.21.107.34:64540
+#
+#		It is believed to not be learned since there is no rule advising 
+#		otherwise. The solution is to pay attention and make sure the rules 
+#		reflect what is intended to learn:
+#		...
+#		;0.0.0.0/0:80 > 172.21.107.34:*;HTTP;Sun Jun  6 15:31:31 2010;0
+#		
+#		74.125.0.32:80 > 172.21.107.34:64540 would now match.
+#
+#		Care should be taken when creating rules that require matching against 
+#		a regular expression. They can be expensive in performance.
+# Post:
+#	Previous learned traffic returned; dies if duplicate found or a syntax 
+#	error is discovered within a given rule
+sub get_learned
+{
+	my ($lfile, $learned, $total_learned, $comments) = @_;
+	my $learned_lines = 0;
+	my @learn_line;
+	my @parsed_packet;
+	my $learn_record = 0;
+	my %packets;
+	my $duplicates = 0;
+	my $learn_issue = undef;
+	my @dt;
+	my $epoch;
+
+	%{$learned} = ();
+
+	open(FH_IN, $lfile);
+	while(<FH_IN>)
+	{	
+		next if($_ =~ m/^\s$/g);
+		$learned_lines++;
+		if($_ =~ m/^#/){
+			push(@{$comments}, $_);
+			next;
+		}
+		@learn_line = split(/;/, $_);
+		if($learn_line[1] =~ m /(a|c|[e-z])/i){
+				print STDERR "unable to load records.\n";
+				print STDERR "\n--Error: Invalid format while reading $lfile\n";
+				print STDERR "\nDetected invalid alpha charachter in source/destination.\n";
+				$learn_issue = "($learned_lines):\n$_";
+				$learned_lines = 0;	
+				last;
+		}else{
+			if(substr($learn_line[4], -2, 1) == 1){	#regex rule
+				if(index($learn_line[1], "/") != -1){
+					my ($src, $dst) = split(/>/, $learn_line[1]);
+					if(index($src, "/") != -1){
+						if($src !~ m/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:.*/){
+							print STDERR "unable to load records.\n";
+							print STDERR "\n--Error: Invalid format while reading $lfile\n";
+							print STDERR "\nDetected invalid format in source CIDR notation.\n";
+							$learn_issue = "($learned_lines):\n$_";
+							$learned_lines = 0;	
+							last;
+						}
+					}else{
+						if($_ !~ m/^[\!]?;.*\..*\..*\..*:.*\s>\s.*:.*;.*?;
+							((\D{3}\s+)?\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4});[01]\n$/x){
+							print STDERR "unable to load records.\n";
+							print STDERR "\n--Error: Invalid format while reading $lfile\n";
+							print STDERR "\nPossible issue with Field 2 format or delimiter.\n";
+							$learn_issue = "($learned_lines):\n$_";
+							$learned_lines = 0;	
+							last;
+						}
+					}
+					if(index($dst, "/") != -1){	
+						if($dst !~ m/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:.*/){
+							print STDERR "unable to load records.\n";
+							print STDERR "\n--Error: Invalid format while reading $lfile\n";
+							print STDERR "\nDetected invalid format in destination CIDR notation.\n";
+							$learn_issue = "($learned_lines):\n$_";
+							$learned_lines = 0;	
+							last;
+						}else{
+							if($_ !~ m/^[\!]?;.*:.*\s>\s.*\..*\..*\..*:.*;.*?;
+								((\D{3}\s+)?\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4});[01]\n$/x){
+								print STDERR "unable to load records.\n";
+								print STDERR "\n--Error: Invalid format while reading $lfile\n";
+								print STDERR "\nPossible issue with Field 2 format or delimiter.\n";
+								$learn_issue = "($learned_lines):\n$_";
+								$learned_lines = 0;	
+								last;
+							}
+						}
+					}
+				}else{
+					if($_ !~ m/^[\!]?;.*\..*\..*\..*:.*\s>\s.*\..*\..*\..*:.*;.*?;
+						((\D{3}\s+)?\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4});[01]\n$/x){
+						print STDERR "unable to load records.\n";
+						print STDERR "\n--Error: Invalid format while reading $lfile\n";
+						print STDERR "\nPossible issue with Field 2 format or delimiter.\n";
+						$learn_issue = "($learned_lines):\n$_";
+						$learned_lines = 0;	
+						last;
+					}
+				}
+			}else{
+				if( $_ !~ m/^[\!]?;
+						\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5}|\*)\s>\s 
+						\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5}|\*);.*?;
+						((\D{3}\s+)?\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4});[01]\n$/x
+							&&	
+					$_ !~ m/^[\!]?;
+						\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5}|\*)\s>\s 
+						\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:(\d{1,5}|\*);.*?;
+						((\D{3}\s+)?\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4});[01]\n$/x
+							&&
+					$_ !~ m/^[\!]?;
+						\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:(\d{1,5}|\*)\s>\s 
+						\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5}|\*);.*?;
+						((\D{3}\s+)?\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4});[01]\n$/x
+							&&
+					$_ !~ m/^[\!]?;
+						\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:(\d{1,5}|\*)\s>\s 
+						\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:(\d{1,5}|\*);.*?;
+						((\D{3}\s+)?\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4});[01]\n$/x
+				){
+					print STDERR "unable to load records.\n";
+					print STDERR "\n--Error: Invalid format while reading $lfile\n";
+					$learn_issue = "($learned_lines):\n$_";
+					$learned_lines = 0;	
+					last;
+				}
+			}
+		}
+		chomp;
+		if(exists $packets{$learn_line[1]}){
+			$packets{$learn_line[1]}++;
+		}else{
+			$packets{$learn_line[1]} = 1;
+		}
+		if(parse_packet($learn_line[1], \@parsed_packet)){
+			$learn_record++;
+			print STDERR "\n-- Warning: Unexpected packet format for record $learn_record\n";
+			print STDERR "Trying to load learned packet: $learn_line[1]\n";
+			print STDERR "Skipping...\n";
+			next;
+		}
+		$learned->{$learned_lines}{record_id} = $learned_lines;
+		$learned->{$learned_lines}{learned_line} = $_;
+		$learned->{$learned_lines}{learned_packet} = $learn_line[1];
+		$learned->{$learned_lines}{is_authorized} = ($learn_line[0] eq "!") ? 0 : 1;
+		$learned->{$learned_lines}{src_ip} = $parsed_packet[0];
+		$learned->{$learned_lines}{src_port} = $parsed_packet[1];
+		$learned->{$learned_lines}{dst_ip} = $parsed_packet[2];
+		$learned->{$learned_lines}{dst_port} = $parsed_packet[3];
+		$learned->{$learned_lines}{user_comment} = $learn_line[2];
+		$learned->{$learned_lines}{learned_date} = $learn_line[3];
+		$learned->{$learned_lines}{match_re} = $learn_line[4];
+		chomp($learned->{$learned_lines}{match_re});
+		parse_datetime($learned->{$learned_lines}{learned_date}, \@dt);
+		get_epoch(\@dt, \$epoch);
+		$learned->{$learned_lines}{epoch} = $epoch;
+	}
+	close(FH_IN);
+
+	while(my($record, $dup_count) = each(%packets)) 
+	{
+		if($dup_count > 1){
+			print STDERR "\n--Error: Duplicate entry found\n";
+			print STDERR "Found $dup_count packet entries for $record\n";
+			$duplicates++;
+		}
+	}
+	
+	if($duplicates > 0){
+		die "\nNumber of issues to fix: $duplicates\nPlease rectify and try again. Quitting.\n";
+	}else{
+		if($learned_lines == 0){
+			print STDERR "\n[Expected format]:\n\n";
+			print STDERR "[!];src[/mask]:prt > dst[/mask]:prt;[comment];";
+			print STDERR "[Day] Mon  dd hh:mm:ss YYYY;0|1\n\n";
+			print STDERR "[Record synopsis]:\n";
+			print STDERR "o Field 1 must be blank (authorized) or contain a \"!\" (unauthorized)\n";
+			print STDERR "o Field 2 must be: source IP[/mask]:port > destination\n";
+			print STDERR "IP[/mask]:port\n";
+			print STDERR "o Field 3 must be blank or can contain an optional user comment\n";
+			print STDERR "o Field 4 must contain a date in the format listed above\n";
+			print STDERR "o Field 5 must contain a zero (0) or a one (1) indicating if Field 2\n";
+			print STDERR "should be matched against captures using a regex\n";
+			print STDERR "\n[Note]:\n";
+			print STDERR "o Any line can be skipped by prefixing a hash (#) before the\n";
+			print STDERR "data\n";
+			print STDERR "o Fields are delimited by a semicolon (;)\n";
+			print STDERR "o If Field 2 is using a regex then Field 5 should be set (1)\n";
+			print STDERR "o If the regex field (Field 5) is set:\n";
+			print STDERR "\to Field 2 is minimally santitized\n";
+			print STDERR "\to CIDR notations can only contain regular expressions as part\n";
+			print STDERR "\tof their ports\n";
+			print STDERR "\to Standard IP formats should contain regular expressions ONLY matching\n"; 
+			print STDERR "\teach individual octet such as: \d{1,3} or a wild card such as: *\n";
+			print STDERR "\to You can simulate a CIDR block such as 192.168.0.0/24 as\n";
+			print STDERR "\t192.168.0.\\d{1,3} or 192.168.0.* or simulate a CIDR like\n";
+			print STDERR "\t172.21.0.0/16 as 172.21.\\d{1,3}.\\d{1,3} or 172.21.*.\\d{1,3}\n";
+			print STDERR "\to Character classes can be used but it is up to the end user to\n";
+			print STDERR "\tproperly use\n";
+			print STDERR "\to The following alpha charachters are not allowed: a, c, e-z\n";
+			print STDERR "o Since rules are treated in an order similar to a firewall, the last\n";
+			print STDERR "rule should only be: ...;0.0.0.0/0:* > 0.0.0.0/0:*;...\n";
+			print STDERR "o Records must be terminated by a newline\n";
+			print STDERR "\n[Example]:\n\n";
+			print STDERR "#This is a comment and will be skipped\n";
+			print STDERR "!;192.168.0.10:* > 192.168.0.50:22;No SSH to this host;Jun  2 16:20:05 2010;0\n";
+			print STDERR ";172.16.0.0/12:* > 0.0.0.0/0:(80|443)\b;HTTP/S OK;Wed Jun  2 16:20:05 2010;1\n";
+			print STDERR "!;0.0.0.0/0:* > \\d{1,3}.*.*.*:(69|2[013])\b;No TFTP/FTP/TELNET;Wed Jun  2 16:20:05 2010;1\n";
+			print STDERR "!;172.\\d{1,3}.*.*:* > 10.0.0.0/8:*;No 172/8 access to this network;Fri Sep 23 21:27:42 2016;1\n";
+			print STDERR ";0.0.0.0/0:* > 0.0.0.0/0:*;Remaining traffic OK;Fri Sep 23 21:27:42 2016;1\n";
+			print STDERR "\n\n", "=" x 50, "\n\n";
+			print STDERR "\t\t[ISSUE FOUND AT]:";
+			print STDERR "\nLine $learn_issue\n";
+			die "Please rectify this issue and try again. Quitting.\n";
+		}else{
+			$$total_learned = $learned_lines;
+		}
+	}
+}
+# Name:
+#	parse_packet
+# Pre:
+#	$ 	= scalar representing the packet to parse 
+#	\@ 	= reference to an array representing the array to fill the parsed 
+#		packet with. The fields will be returned as follows:
+#		[0] = src_ip
+#		[1] = src_port
+#		[2] = dst_ip
+#		[3] = dst_port
+#
+# 	Note:
+#		parse_packet() expects the packet to be in the following format: 
+#		1. src_ip:port>dst_ip:port
+#			- or -
+#		2. src_ip:port > dst_ip:port
+#
+#		There was no need to use a regex to validate the above format as 
+#		other functions that call this function provide that validation
+# Post:
+#	Returns 0 on success (array reference filled); 1 on failure (bad format)
+sub parse_packet
+{
+	my ($packet, $parsed_packet) = @_;
+	my $total = 0;
+	
+	@{$parsed_packet} = ();
+	$packet =~ s/\s//g;
+	
+	($parsed_packet->[0], $parsed_packet->[2]) = split(/\>/, $packet);
+	($parsed_packet->[0], $parsed_packet->[1]) = split(/:/, $parsed_packet->[0]);
+	($parsed_packet->[2], $parsed_packet->[3]) = split(/:/, $parsed_packet->[2]);
+	
+	$total = scalar(@{$parsed_packet});
+	
+	if($total != 4){
+		return 1;
+	}
+	
+	return 0;
+}
+# Name:
+#	learn
+# Pre:
+#	\%	= reference to a hash containing at least the following fields:
+#		- cfile : file holding the previous captured traffic
+#		- lfile : file where to write the learned traffic
+#		- do_comment: flag whether to suppress user comments for the curent 
+#		session
+#		1 = suppress
+#		0 = prompt
+#	\%	= reference to a hash representing the previous learned traffic. This 
+#		hash should contain at least the following fields (already initialized):
+#		- record_id	: holds the record id in the order it was read
+#		- learned_line : holds the full formatted record as it exists in the 
+#		learn file
+#		- is_authorized : flag indicating if traffic is authorized (1) or 
+#		not (0)
+#		- src_ip : the captured source IP address
+#		- src_port : the captured source port
+#		- dst_ip : the captured destination IP address
+#		- dst_port : the captured destination port
+#		- user_comment : holds any user comment that may have been added
+#		- learned_date : holds the date the traffic was learned
+#	$ 	= scalar representing the total records previously learned
+#	$	= See note for this parameter
+#	$	= See note for this parameter
+#	@	= See note for this parameter
+#	Note: 
+#		It is necessary to empty the hash so garbage records do not exist if 
+#		previously inititalized and the scalar passed which represents the 
+#		total number of learned records is 0, such as: 
+#		%{$learned} = () if($total_learned == 0);
+#
+#		The call to localtime() returns the date in the following format:
+#		Day Mon  dd hh:mm:ss YYYY (ex: Wed Jun  2 16:20:05 2010)
+#
+#		The last three parameters are passed last in the case where a user 
+#		chooses to filter captures for later review (save to another file). 
+#		The reason is that action calls learn recursively. If a user has a 
+#		defined filter for skipping captures (not saving for review), the 
+#		"skip" filter variable and array element values are lost upon exiting 
+#		the scope of learn(). Because only Perl 5.10 introduces a "static" 
+#		variable option, I did not want to be dependent on a major version for 
+#		a minor feature:
+#		
+#		$do_skip_filter
+#		$skip_filter
+#		@filters
+# Post:
+#	Previous captured traffic reviewed/learned
+sub learn
+{
+	my($arg, $learned, $total_learned, $do_skip_filter, 
+		$skip_filter, $filters) = @_;
+	my $cap_bytes = 0;
+	my $cap_lines = 0;
+	my $this_line = 0;
+	my $cap_remaining = 0;
+	my $record_id = 0;
+	my $skip = 0;
+	my $skip_to_main = 0;
+	my $total_auth = 0;
+	my $total_unauth = 0;
+	my $choice;
+	my $review_file;
+	my %cap_packets;
+	my @parsed_packet;
+	my $match_filter = 0;
+	my $comment;
+	my $is_authorized;
+	my $do_review_filter = 0;
+	my $review_filter;
+	my $match_re = 0;
+	
+	%{$learned} = () if($total_learned == 0);
+	
+	if(($#filters + 1) > 0){
+		$do_skip_filter = 1;
+	}else{
+		$do_skip_filter = 0;
+	}
+	
+	$SIG{INT} = sub
+	{
+		print STDERR "\n\n-- Interrupt Signal caught. Wrapping up...\n";
+		--$this_line if($this_line == 1);
+		printf("\nPacket percentage addressed: %3.2f\%\n", (($this_line/$cap_lines) * 100));
+		exit(0);
+	};
+	
+	#read captured packets
+	load_captured_packets($arg->{cfile}, \%cap_packets, \$cap_lines);
+	
+	#review previous captured traffic (learn)
+	$cap_bytes = -s $arg->{cfile};
+	$cap_remaining = $cap_lines;
+	foreach $k (sort {$a <=> $b} (keys %cap_packets))
+	{
+		my $packet = $cap_packets{$k};
+		if($do_skip_filter){
+			foreach my $this_filter (@filters)
+			{
+				if($packet =~ m/$this_filter/){
+					$match_filter = 1;
+					last;
+				}
+			}
+			if($match_filter){
+				++$this_line;
+				--$cap_remaining;
+				$match_filter = 0;
+				next;
+			} 
+		}
+		if(!$skip_to_main){
+			++$this_line;
+			--$cap_remaining;
+			next if(length($packet) == 0);
+			if(parse_packet($packet, \@parsed_packet)){
+				print STDERR "\n-- Warning: Unexpected packet format for record $this_line\n";
+				print STDERR "Skipping...\n";
+				<STDIN>;
+				next;
+			}
+			if($total_learned > 0){
+				$record_id = 0;
+				$total_auth = 0;
+				$total_unauth = 0;
+				$total_learned = keys %{$learned};
+				for my $k (keys %{$learned})
+				{
+					if($learned->{$k}{is_authorized}){
+						$total_auth++;
+					}else{
+						$total_unauth++;
+					}
+				}
+				clear_screen();
+				printf("\nPacket percentage learned (so far): %3.2f\%\n", (($this_line/$cap_lines) * 100));
+				if(find_match($learned, \@parsed_packet, \$record_id)){
+					if(!$skip || lc($choice) ne 's'){
+						print "\n-- Note: Current capture matches previous learned traffic\n\n";
+						print "Captured packet ($this_line): $packet\n";
+						print "Learned record ($record_id): $learned->{$record_id}{learned_packet}\n";
+						printf("Authorized: %s\n", ($learned->{$record_id}{is_authorized} ? "Yes" : "No"));
+						print "\n<Press a key to continue or 'S/s' to skip to unlearned data> ";
+						$choice = <STDIN>;
+						chomp($choice);
+						$skip = 1 if(lc($choice) eq 's');
+					}
+					next;
+				}
+			}
+		}
+		$choice = learn_menu_main($arg->{lfile}, $total_learned, $arg->{cfile}, 
+			$cap_bytes, $cap_lines, $cap_remaining, $this_line, $packet, 
+			$total_auth, $total_unauth);
+		$skip_to_main = 0; #reset for redo call;
+		$is_authorized = ($choice == 1) ? "" : "!";
+		if($choice == 1 || $choice == 2){
+			$choice = learn_menu_modify(\$packet, $choice);
+			if($choice == 1 || $choice == 2){
+				if(parse_packet($packet, \@parsed_packet)){
+					print STDERR "\n-- Warning: Unexpected packet format for record $this_line\n";
+					print STDERR "Skipping...\n";
+					<STDIN>;
+					next;
+				}
+				$match_re = ($choice == 2) ? 1 : 0;
+			}elsif($choice == 4){
+				$skip_to_main = 1;
+				redo;
+			}
+			if($arg->{do_comment}){
+				for(;;)
+				{
+					print "\nCommenting enabled. Enter an optional comment ";
+					print "(press 'Enter' to skip).\n";
+					print "Your comment: ";
+					$comment = <STDIN>;
+					chomp($comment);
+					if($comment =~ m/;/){
+						print STDERR "\nCannot allow a semicolon \";\" as this is a field delimiter.\n";
+						print "\n<Press a key to continue>\n";
+						<STDIN>;
+						next;
+					}
+					last;
+				}
+			}else{
+				$comment = "User suppressed";	
+			}
+			write_learn_data($arg->{lfile}, $is_authorized, $packet, 
+				\@parsed_packet, $comment, $arg->{do_reverse_rule}, $match_re);
+			print STDERR "Processing $arg->{lfile}... ";
+			get_learned($arg->{lfile}, $learned, \$total_learned, 0);
+			print STDERR "success.\n";
+			printf("\nTraffic saved as %s. Press any key to continue.\n", 
+				(length($is_authorized) == 0) ? "authorized" : "unauthorized");
+			<STDIN>;
+		}elsif($choice == 3){
+			$choice = learn_menu_review($packet, $arg->{review_file}, 
+				$arg->{cfile}, $arg->{lfile}, $arg->{name});
+			if(length($choice) > 0){
+				$review_file = $choice;
+			}else{
+				$review_file = $arg->{review_file};
+			}
+			do
+			{
+				print "\n$arg->{name} will save this packet to $review_file\n";
+				print "\nCreate a filter for other packets you want to review later [Yes/No]? ";
+				$choice = <STDIN>;
+			}while($choice !~ m/^(y(es)?|n[o]?)\b/i);
+			if($choice =~ m/^[Yy](es)?$/){
+				print "\nNote:\n";
+				print "- The entered filter will be treated as a regular expression.\n";
+				print "- Ensure you escape if in doubt (e.g., octet separators)\n";
+				print "- CIDR notation is NOT respected here - simulate with a regex\n\n";
+				print "Examples: \n";
+				print "- To filter all HTTP, HTTPS, SSH, and NetBios captures:\n\n"; 
+				print ":(80|443|22|13[789])\\b\n";
+				print "\n- To filter anything to the whole 239.0.0.0/8 network on all ports:\n\n";
+				print "239\\..*:*\n";
+				print "\n- To filter all HTTP/S responses for 192.168.0.0/16 on all ports:\n\n";
+				print ".*:(80|443)\b\\s>\\s192\\.168\\..*:(80|443)\\b\n";
+				print "\n- To quickly filter all remaining traffic:\n\n";
+				print ".* or :\\d+\n\n";
+				print "\nEnter your filter below (press \"enter\" by itself to abort):\n";
+				$review_filter = <STDIN>;
+				chomp($review_filter);
+				if(length($review_filter) > 0){
+					$do_review_filter = 1;
+					print "Filtering captures that match: \"$review_filter\"...\n";
+					@filtered_cap = ();
+					$cap_lines = keys %cap_packets;
+					print "Captures before filter: $cap_lines\n";
+					for my $pkt_key (keys %cap_packets)
+					{
+						next if($cap_packets{$pkt_key} !~ m/$review_filter/);
+						print "Will filter: $cap_packets{$pkt_key}\n";
+						push(@filtered_cap, $cap_packets{$pkt_key});
+						delete($cap_packets{$pkt_key});
+					}
+					$cap_filter_count = keys %cap_packets;
+					print "Captures after filter: $cap_filter_count\n";
+					if($cap_filter_count == $cap_lines){
+						print "\nFilter did not match any captures. Re-loading...\n";
+						push(@filters, $review_filter);
+						learn($arg, $learned, $total_learned, $do_skip_filter, 
+							$skip_filter, @filters);
+						exit(0);
+					}
+					write_capture_data($arg->{cfile}, \%cap_packets, 0);
+				}
+			}
+			if(save_review_file($review_file, $packet, \@filtered_cap)){
+				print STDERR "\nThere was an error saving $review_file. A\n";
+				print STDERR "common issue could be not using a relative or\n"; 
+				print STDERR "absolute path (Note: prefixing \"~\" is invalid).\n\n";
+				print STDERR "For example:\n";
+				print STDERR "review-file-name\n";
+				print STDERR "./relative/path/to/review-file-name\n";
+				print STDERR "/absolute/path/to/review-file-name\n\n";
+				die "Unable to save $packet to:\n$review_file. $!\n";
+			}
+			print "\nTraffic saved. Press any key to continue.\n";
+			<STDIN>;
+			if($do_review_filter){
+				if($cap_filter_count == 0){
+					$this_line = $cap_lines;
+					last;
+				}else{
+					push(@filters, $review_filter);
+					learn($arg, $learned, $total_learned, $do_skip_filter, 
+						$skip_filter, @filters);
+					exit(0);
+				}
+			}
+		}elsif($choice == 4){
+			do
+			{
+				clear_screen();
+				print "\t\t[Menu - Skip Packet]\n\n";
+				print "Note: Press 'ctrl + c' to abort this menu option\n\n";
+				print "Before '$packet' is skipped...\n\n";
+				print "A filter will prevent $arg->{name} from asking you about similar traffic.\n";
+				print "Create a filter for other packets you want to skip [Yes/No]? ";
+				$choice = <STDIN>;
+				chomp;
+			}while($choice !~ m/^(y(es)?|n[o]?)\b/i);			
+			if($choice =~ m/^[Yy](es)?$/)
+			{
+				print "\nNote:\n";
+				print "- The entered filter will be treated as a regular expression.\n";
+				print "- Ensure you escape if in doubt (e.g., octet separators)\n";
+				print "- CIDR notation is NOT respected here - simulate with a regex\n\n";
+				print "Examples: \n";
+				print "- To filter all HTTP, HTTPS, SSH, and NetBios captures:\n\n"; 
+				print ":(80|443|22|13[789])\\b\n";
+				print "\n- To filter anything to the whole 239.0.0.0/8 network on all ports:\n\n";
+				print "239\\..*:*\n";
+				print "\n- To filter all HTTP/S responses for 192.168.0.0/16 on all ports:\n\n";
+				print ".*:(80|443)\b\\s>\\s192\\.168\\..*:(80|443)\\b\n";
+				print "\n- To quickly filter all remaining traffic:\n\n";
+				print ".* or \\d+\n\n";
+				print "\nEnter your filter below (press \"enter\" by itself to abort):\n";
+				$skip_filter = <STDIN>;
+				chomp($skip_filter);
+				if($packet =~ m/$skip_filter/){
+					push(@filters, $skip_filter);
+					print "\n\nMatched!\n";
+					print "Filter = $skip_filter\n";
+					print "Current packet = $packet\n\n";
+					print "Press enter to continue\n";
+					<STDIN>;
+				}else{
+					do{
+						print "\n\nWarning: The filter does NOT match the current packet\n";
+						print "Filter = $skip_filter\n";
+						print "Current packet = $packet\n\n";
+						print "Add configured filter and continue [Yes/No]? ";
+						$choice = <STDIN>;
+					}while($choice !~ m/^(y(es)?|n[o]?)\b/i);
+					if($choice =~ m/^n[o]?\b/i){
+						$skip_to_main = 1;
+						redo;
+					}else{
+						push(@filters, $skip_filter);
+					}
+				}
+			}
+			if(($#filters + 1) > 0){
+				$do_skip_filter = 1;
+			}else{
+				$do_skip_filter = 0;
+			}
+		}elsif($choice == 5){
+			--$this_line if($this_line == 1);
+			last;
+		}
+	}
+	
+	printf("\nPacket percentage addressed: %3.2f\%\n", (($this_line/$cap_lines) * 100));
+}
+# Name:
+#	load_captured_packets
+# Pre:
+#	$	= scalar representing the capture file
+#	\%	= reference to a hash that will hold the captured packets
+#	\$	= reference to a scalar that will hold the captured lines
+# Post:
+#	Captured packets loaded into memory; dies if 0 valid lines to read
+sub load_captured_packets
+{
+	my($cfile, $cap_packets, $cap_lines) = @_;
+	my $cap_invalid_lines = 0;
+	my %cap_invalid_packets;
+	
+	print STDERR "\nProcessing $cfile... ";
+	if((-e $cfile) && (! -z $cfile)){
+		open(FH_IN, $cfile);
+		while(<FH_IN>)
+		{
+			if($_ !~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}
+				\s>\s\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}$/x){
+				$cap_invalid_lines++;
+				$cap_invalid_packets{$.} = $_;
+				next;
+			}else{
+				chomp;
+				$$cap_lines++;
+				$cap_packets->{$$cap_lines} = $_;
+			}
+		}
+		close(FH_IN);
+	}else{
+		die "nothing valid to read.\nTry capturing and try this mode again.\n";
+	}
+	
+	if($$cap_lines == 0){
+		print STDERR "failed.\n";
+		print STDERR "\n-- Error: All data found to be invalid.\n\n";
+		print STDERR "Expected format per line: IP_SRC_ADDRESS:Port > IP_DST_ADDRESS:Port\n";
+		print STDERR "\nExample:\n192.168.0.10:58130 > 192.168.0.20:8080\n";
+		print STDERR "192.168.0.20:8080 > 192.168.0.10:58130\n";
+		die "\nTry another capture. Quitting.\n";		
+	}else{
+		if($cap_invalid_lines > 0){
+			print STDERR "found some issues.\n";
+			print STDERR "\n-- Warning: Invalid formatted data found.\n\n";
+			for my $k (sort{$a<=>$b} keys %cap_invalid_packets)
+			{
+				print STDERR "Capture line $k: $cap_invalid_packets{$k}";
+			}
+			print STDERR "\nExpected format per line: IP_ADDRESS:Port > IP_ADDRESS:Port\n";
+			print STDERR "\nExample:\n192.168.0.10:58130 > 192.168.0.20:8080\n";
+			print STDERR "192.168.0.20:8080 > 192.168.0.10:58130\n";
+			print STDERR "\nTotal invalid lines skipped: $cap_invalid_lines\n";
+			print STDERR "Possible remaining: $$cap_lines\n";
+		}else{
+			print STDERR "success.\n";
+		}
+	}
+	
+	print STDERR "\nPress any key to continue learning or 'ctrl + c' to quit.\n";
+	<STDIN>;
+}
+# Name:
+#	learn_menu_main
+# Pre:
+#	Several scalars that are required to make the menu option function
+#	correctly. See learn().
+#
+#	Note:
+#		This functions as a dependent of learn(). This is a menu option and 
+#		was broken out in order to keep learn() more clean.
+# Post:
+#	The user's choice
+sub learn_menu_main
+{
+	my ($lfile, $total_learned, $cfile, $cap_bytes, 
+		$cap_lines, $cap_remaining, $this_line, $packet, $total_auth, $total_unauth) = @_;
+	my $choice;
+	
+	do
+	{
+		clear_screen();
+		print "\t\t[Menu - Main]\n\n";
+		print "Learn file: $lfile (learned traffic: $total_learned)\n";
+		print "Capture file: $cfile (bytes: $cap_bytes)\n";
+		print "Total authorized traffic:\t\t$total_auth\n";
+		print "Total unauthorized traffic:\t\t$total_unauth\n";
+		print "Total captured traffic to learn:\t$cap_lines\n";
+		print "Packets remaining (% complete):\t\t";
+		printf("%s (%3.2f\%)\n", $cap_remaining, (($this_line/$cap_lines) * 100)); 
+		print "\n\t[Viewing captured packet $this_line]:\n\n\t$packet\n\n";
+		print "1. Learn as authorized traffic.\n";
+		print "2. Learn as unauthorized traffic.\n";
+		print "3. Save for later review (optional regex filter).\n";
+		print "4. Skip packet(s) (optional regex filter).\n";
+		print "5. Quit learning.\n";
+		print "\nYour choice: ";
+		$choice = <STDIN>;
+		chomp($choice);
+	}while($choice !~ m/^[12345]\b/);
+	
+	return $choice;
+}
+# Name:
+#	learn_menu_modify
+# Pre:
+#	Several scalars that are required to make the menu option function
+#	correctly. See learn().
+#
+#	Note:
+#		The first parameter is a reference to a scalar representing the 
+#		modified packet.
+#
+#		This functions as a dependent of learn(). This is a menu option and 
+#		was broken out in order to keep learn() more clean.
+# Post:
+#	The user's choice
+sub learn_menu_modify
+{
+	my ($packet, $auth_choice) = @_;
+	my $pkt;	
+	my $choice;
+	
+	do
+	{
+		clear_screen();
+		print "\t\t[Menu - Learn Packet]\n\n";
+		printf("\nYou chose to learn %s as %s.\n\n", $$packet, 
+				($auth_choice == 1) ? "authorized" : "unauthorized");
+		print "1. Modify traffic (using IP, CIDR, port wildcards).\n";
+		print "2. Modify traffic (using regular expressions)\n";
+		print "3. Leave traffic alone.\n";
+		print "4. Back.\n";
+		print "\nNote:\n";
+		print "When using option #2 above - Regular expressions are only valid\n";
+		print "w/ ports when using a CIDR.\n";
+		print "\nYour choice: ";
+		$choice = <STDIN>;
+		chomp($choice);
+	}while($choice !~ m/^[1234]\b/);
+	
+	if($choice == 1){
+		for(;;)
+		{
+			clear_screen();
+			printf("\t\t[Menu - Modify Packet as %s]\n\n", 
+					($auth_choice == 1) ? "authorized" : "unauthorized");
+			print "Modifying: $$packet\n\n";
+			print "Enter modification to be of the following formats:\n";
+			print "Note: An asterisk (*) may be used with ports only)\n\n";
+			print "\tsrc_ip:prt > dst_ip:prt\n\t(e.g., 192.168.100.1:* > 192.168.100.2:22)\n\n";
+			print "\tsrc_ip:prt > dst_cidr:prt\n\t(e.g., 192.168.100.1:* > 192.168.100.0/24:445)\n\n";	
+			print "\tsrc_cidr:prt->dst_ip:prt\n\t(e.g., 192.168.100.0/24:* > 192.168.100.2:8080)\n\n";
+			print "\tsrc_cidr:prt->dst_cidr:prt\n\t(e.g., 192.168.100.0/24:* > 192.168.100.0/24:*)\n\n";
+			print "\nCurrent packet: $$packet\n";
+			print "Enter new format (or press 'enter' to abort):\n";
+			$pkt = <STDIN>;
+			chomp($pkt);
+			if(length($pkt) == 0){
+				$choice = 4;
+				last;
+			}
+			next if(!($pkt =~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5}|\*)\s>\s 
+					\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5}|\*)$/x
+						||	
+					$pkt =~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5}|\*)\s>\s 
+					\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:(\d{1,5}|\*)$/x
+						||
+					$pkt =~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:(\d{1,5}|\*)\s>\s 
+					\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5}|\*)$/x
+						||
+					$pkt =~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:(\d{1,5}|\*)\s>\s 
+					\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:(\d{1,5}|\*)$/x
+					));
+			$$packet = $pkt;
+			last;
+		}
+	}elsif($choice == 2){
+		for(;;)
+		{
+			clear_screen();
+			printf("\t\t[Menu - Modify Packet as %s]\n\n", 
+					($auth_choice == 1) ? "authorized" : "unauthorized");
+			print "Modifying (using a regular expression): $$packet\n\n";
+			print "Enter modification to be of the following formats:\n\n";
+			print "\tsrc_ip:prt > dst_ip:prt\n";
+			print "\t(e.g., 192.168.100.(1|2):* > 192.168.100.2:(2[05]|443|80{1,2})\\b)\n\n";
+			print "\tsrc_ip:prt > dst_cidr:prt\n";
+			print "\t(e.g., 192.168.[12]00.[1-9]([0-9])?:\\d{1,5} > 192.168.100.0/24:13[789])\n\n";	
+			print "\tsrc_cidr:prt->dst_ip:prt\n";
+			print "\t(e.g., 192.168.100.0/24:* > 192.168.100.2:(2[25]|(80){1,2})\\b)\n\n";
+			print "\tsrc_cidr:prt->dst_cidr:prt\n";
+			print "\t(e.g., 192.168\\..*:\\d{1,5} > 192.168\\..*.(1[09]):(2[0-2,5])\\b)\n";
+			print "\n\nNote:\n";
+			print "- Regular expressions with CIDR blocks are valid for ports only\n";
+			print "- CIDR blocks can be simulated using regular expressions such as:\n";
+			print "\t1. 192.168.0.0/24 as 192.168.0\\..* or 192.168.0\\.\\d{1,3}\n";
+			print "\t2. 192.168.0.0/16 as 192.168\\..* or 192.168\\.\\d{1,3}\\.\\d{1,3}\n";
+			print "- Use caution as only minimal validation is done for these rule types\n\n";
+			print "\nCurrent packet: $$packet\n";
+			print "Enter new format (or press 'enter' to abort):\n";
+			$pkt = <STDIN>;
+			chomp($pkt);
+			if(length($pkt) == 0){
+					$choice = 4;
+					last;
+			}else{
+				if($pkt =~ m/(a|c|[e-z])/i){
+					print STDERR "\nInvalid alpha character found.\n";
+					print STDERR "Press any key to continue.\n";
+					<STDIN>;
+					next;
+				}
+				if($pkt !~ m/^.*:.*\s>\s.*:.*/){
+					print STDERR "\nInvalid format. Possibly missing:\n";
+					print STDERR "- port delimiter(s)\n- source/destination delimiter (>)\n";
+					print STDERR "- too many spaces\n";
+					print STDERR "Press any key to continue.\n";
+					<STDIN>;
+					next;
+				}else{
+					if(index($pkt, "/") != -1){
+						my ($src, $dst) = split(/>/, $pkt);
+						if(index($src, "/") != -1){
+							if($src !~ m/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:.*/){
+								print STDERR "\nDetected invalid format in source CIDR notation.\n";
+								print STDERR "Press any key to continue.\n";
+								<STDIN>;
+								next;
+							}
+						}else{
+							if($pkt !~ m/.*\..*\..*\..*:.*\s>\s.*:.*/){
+								print STDERR "\nNo source CIDR. Possible issue with packet format.\n";
+								print STDERR "Press any key to continue.\n";
+								<STDIN>;
+								next;
+							}
+						}
+						if(index($dst, "/") != -1){	
+							if($dst !~ m/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}:.*/){
+								print STDERR "\nDetected invalid format in destination CIDR notation.\n";
+								print STDERR "Press any key to continue.\n";
+								<STDIN>;
+								next;
+							}
+						}else{
+							if($pkt !~ m/^.*:.*\s>\s.*\..*\..*\..*:.*/){
+								print STDERR "\nNo destination CIDR. Possible issue with packet format.\n";
+								print STDERR "Press any key to continue.\n";
+								<STDIN>;
+								next;
+							}
+						}
+					}else{
+						if($pkt !~ m/.*\..*\..*\..*:.*\s>\s.*\..*\..*\..*:.*/){
+							print STDERR "\nPossible issue with packet format.\n";
+							print STDERR "Press any key to continue.\n";
+							<STDIN>;
+							next;
+						}
+					}
+				}
+			}
+			$$packet = $pkt;
+			last;
+		}
+	}
+	return $choice;
+}
+# Name:
+#	learn_menu_review
+# Pre:
+#	Several scalars that are required to make the menu option function
+#	correctly. See learn().
+#
+#	Note:
+#		This functions as a dependent of learn(). This is a menu option and 
+#		was broken out in order to keep learn() more clean.
+# Post:
+#	The user's choice
+sub learn_menu_review
+{
+	my ($packet, $review_file, $cfile, $lfile, $name) = @_;
+	my $choice, my $choice2; 
+	
+	for(;;)
+	{
+		clear_screen();
+		print "\t\t[Menu - Save Packet for Later Review]\n\n";
+		print "\nNote: Press 'ctrl + c' to abort this menu option\n\n";
+		print "Packet to save for later review:\n\n\t$packet\n\n";
+		print "Type a file name below to save for later review or press 'enter'\n";
+		print "to save to $review_file (default): ";
+		$choice = <STDIN>;
+		chomp($choice);
+		if($choice eq $cfile || $choice eq $lfile || $choice eq $name){
+			print STDERR "\n-- Error: $choice is is an illegal file name\n";
+			print STDERR "Review file cannot be the same as:\n";
+			print STDERR "- program name ($name)\n- capture file ($cfile)\n";
+			print STDERR "- learn file ($lfile)\n\n";
+			print STDERR "Press any key to continue.\n";
+			<STDIN>;
+		}else{
+			do
+			{
+				print "\n\nContinue [Yes/No]? ";
+				$choice2 = <STDIN>;
+			}while($choice2 !~ m/^(y(es)?|n[o]?)\b/i);
+			if($choice2 =~ m/^n[o]?\b/i){
+				redo;
+			}else{
+				last;
+			}
+		}
+	}
+	
+	return $choice;
+}
+# Name:
+#	find_match
+# Pre:
+#	$	= reference to a reference to a hash representing the learned traffic 
+#		to compare
+#	\@	= reference to an array representing the parsed packet information
+#		The fields passed will be as follows:
+#		[0] = src_ip
+#		[1] = src_port
+#		[2] = dst_ip
+#		[3] = dst_port
+#	\$	= record id of the learned traffic that was matched
+#
+#	Note:
+#		- The learned data needs to be sorted so that traffic can be placed in 
+#		a predictable order (similar to a firewall). If unsorted, the order of 
+#		the record ids cannot be predicted. Take this example:
+#
+#		** the below lines are on multiple lines for brevity only
+#
+#		... Record id 1/10 and 2/10
+#		!|172.16.0.0/12:* > 157.166.0.0/16:80|No HTTP to CNN subnet| \
+#			Thu Jun  10 10:25:40 2010
+#		!|157.166.0.0/16:80 > 172.16.0.0/12:*|No HTTP to CNN subnet| \
+#			Thu Jun  10 10:25:40 2010
+#		... Record id 9/10 and 10/10
+#		|172.16.0.0/12:* > 0.0.0.0/0:80|HTTP|Tue Jun  8 16:13:48 2010
+#		|0.0.0.0/0:80 > 172.16.0.0/12:*|HTTP|Tue Jun  8 16:13:48 2010
+#	
+#		If a user navigates to the CNN subnet, records 9 and 10 could be 
+#		compared before records 1 and 2 thus seeing the traffic as authorized. 
+#		What we want is to have the flexibility of a firewall where your finite 
+#		rules are placed first. Sorting the records, provides this flexibility.
+#	
+#		- In case of performance (or if sorting is no longer desired):
+#		Replace this: (** on multiple lines for brevity only)
+#			foreach $this (sort{$a->{record_id} <=> $b->{record_id}} \
+#				values %{$learned})
+#		With this:
+#			for my $k (keys %{$learned})
+#		Replace this:
+#			$this->
+#		With this:
+#			$learned->{$k}
+# Post:
+#	Returns 1 if a match is found amongst previously learned packets; 0 if not
+sub find_match
+{
+	my ($learned, $parsed_packet, $record_id) = @_;
+	my $match_src;
+	my $match_dst;
+	my $src_cap;
+	my $dst_cap;
+	my $src_learn;
+	my $dst_learn;
+	my @cidr;
+	my $found;
+	my $match = 0;
+
+	$src_cap = "$parsed_packet->[0]:$parsed_packet->[1]";
+	$dst_cap = "$parsed_packet->[2]:$parsed_packet->[3]";
+
+	foreach $this (sort{$a->{record_id} <=> $b->{record_id}} values %{$learned})
+	{
+		$match_src = 0;
+		$match_dst = 0;
+		$found = 0;
+		$src_learn = "$this->{src_ip}:$this->{src_port}";
+		$dst_learn = "$this->{dst_ip}:$this->{dst_port}";
+		if($this->{match_re}){
+			if(index($src_learn, "/") != -1){
+				@cidr = ("$this->{src_ip}");
+				lookup_cidr_range(1, 0, $parsed_packet->[0], \@cidr, \$found);
+				if($found){
+					if(index($this->{src_port}, "*") != -1){
+						$match_src = 1;
+					}else{
+						$match_src = 1 if($parsed_packet->[1] =~ m/^$this->{src_port}/);
+					}
+				}
+			}else{
+				if($parsed_packet->[0] =~ m/$this->{src_ip}/){
+					if(index($this->{src_port}, "*") != -1){
+						$match_src = 1;
+					}else{
+						$match_src = 1 if($parsed_packet->[1] =~ m/^$this->{src_port}/);
+					}
+				}
+			}
+		}else{
+			if($src_cap eq $src_learn){
+				$match_src = 1;
+			}else{
+				if(index($src_learn, "/") != -1){
+					@cidr = ("$this->{src_ip}");
+					lookup_cidr_range(1, 0, $parsed_packet->[0], \@cidr, \$found);
+					if($found){
+						if($parsed_packet->[1] == $this->{src_port}){
+							$match_src = 1;
+						}else{
+							$match_src = 1 if(index($src_learn, "*") != -1);
+						}
+					}
+				}else{
+					if($parsed_packet->[0] eq $this->{src_ip}){
+						if($parsed_packet->[1] == $this->{src_port}){
+							$match_src = 1;
+						}else{
+							$match_src = 1 if(index($src_learn, "*") != -1);
+						}
+					}	
+				}	
+			}
+		}
+		next unless($match_src);
+		if($this->{match_re}){
+			if(index($dst_learn, "/") != -1){
+				@cidr = ("$this->{dst_ip}");
+				lookup_cidr_range(1, 0, $parsed_packet->[2], \@cidr, \$found);
+				if($found){
+					if(index($this->{dst_port}, "*") != -1){
+						$$record_id = $this->{record_id};
+						$match_dst = 1;
+						last;
+					}else{
+						if($parsed_packet->[3] =~ m/^$this->{dst_port}/){
+							$$record_id = $this->{record_id};
+							$match_dst = 1;
+							last;
+						}
+					}
+				}
+			}else{
+				if($parsed_packet->[2] =~ m/$this->{dst_ip}/){
+					if(index($this->{dst_port}, "*") != -1){
+						$$record_id = $this->{record_id};
+						$match_dst = 1;
+						last;
+					}else{
+						if($parsed_packet->[3] =~ m/^$this->{dst_port}/){
+							$$record_id = $this->{record_id};
+							$match_dst = 1;
+							last;
+						}
+					}
+				}
+			}
+		}else{
+			if($dst_cap eq $dst_learn){
+				$$record_id = $this->{record_id};
+				$match_dst = 1;
+				last;
+			}else{
+				if(index($dst_learn, "/") != -1){
+					@cidr = ("$this->{dst_ip}");
+					lookup_cidr_range(1, 0, $parsed_packet->[2], \@cidr, \$found);
+					if($found){
+						if($parsed_packet->[3] == $this->{dst_port}){
+							$$record_id = $this->{record_id};
+							$match_dst = 1;
+							last;
+						}else{
+							if(index($dst_learn, "*") != -1){
+								$$record_id = $this->{record_id};
+								$match_dst = 1;
+								last;
+							}
+						}
+					}
+				}else{
+					if($parsed_packet->[2] eq $this->{dst_ip}){
+						if($parsed_packet->[3] == $this->{dst_port}){
+							$$record_id = $this->{record_id};
+							$match_dst = 1;
+							last;
+						}else{
+							if(index($dst_learn, "*") != -1){
+								$$record_id = $this->{record_id};
+								$match_dst = 1;
+								last;
+							}
+						}
+					}	
+				}
+			}
+		}
+	}
+	
+	$match = 1 if($match_src && $match_dst);
+	return $match;
+}
+# Name:
+#	write_learn_data
+# Pre:
+#	$	= scalar representing the file to save learned data
+#	$	= scalar representing the authorization flag to add to the record
+#	$	= scalar representing the current capture packet being learned
+#	\@	= reference to an array representing the parsed traffic. The fields 
+#		passed will be as follows:
+#		[0] = src_ip
+#		[1] = src_port
+#		[2] = dst_ip
+#		[3] = dst_port
+#	$	= scalar representing the comment to add to the record
+#	$ 	= scalar representing whether rule should be checked using a regex
+#		0 = No
+#		1 = Yes
+#
+#	Note:
+#		This function is responsible for getting the date/time for the record 
+#		as well as converting the original traffic to its reverse. If the 
+#		reverse is equal to the original, the reverse is ignored (as it would 
+#		cause an unnecessary duplicate).
+# Post:
+#	New traffic written (learned); dies if data cannot be written
+sub write_learn_data
+{
+	my ($lfile, $is_authorized, $packet, $parsed_packet, $comment, 
+		$do_reverse_rule, $match_re) = @_;
+	my $dt_tm = localtime();
+	my $src = "$parsed_packet->[0]:$parsed_packet->[1]";
+	my $dst = "$parsed_packet->[2]:$parsed_packet->[3]";
+
+	if(-e $lfile){
+		open(FH_OUT, ">>$lfile") || die "\nUnable to open and append to $lfile. $!\n";
+	}else{
+		open(FH_OUT, ">$lfile") || die "\nUnable to create $lfile. $!\n";
+	}
+	
+	#learn original
+	$packet = join(';', $is_authorized, $packet, $comment, $dt_tm, $match_re);
+	print "\nWriting...\n$packet\n";
+	print FH_OUT "$packet\n";
+	
+	#learn reverse
+	if($do_reverse_rule){
+		if($src eq $dst){
+			print "No need to learn reverse as it would be identical.\n";
+		}else{
+			$packet = "$dst > $src";
+			$packet = join(';', $is_authorized, $packet, $comment, $dt_tm, $match_re);
+			print "$packet\n";
+			print FH_OUT "$packet\n";
+		}
+	}else{
+		print "\nSkipping creation of reverse rule (user suppressed)\n\n";
+	}
+	
+	close(FH_OUT);
+}
+# Name:
+#	daemonize
+# Pre:
+#	\$	= reference to a scalar that will hold the new (child) pid
+#	$	= scalar representing the file to use for STDERR
+#
+#	Note:
+#		Another item that should be done is changing to a directory that is 
+#		guaranteed to be present (i.e., '/'). This is only necessary if 
+#		the current working directory is in danger of every being unmaounted.
+#
+#		The error file is created upon entering daemon mode. However, there 
+#		should not be any concern as long as it is zero bytes.
+# Post:
+#	Daemon started (and child pid returned) or dies on error
+sub daemonize
+{
+	my ($pid, $efile, $open_err_file) = @_;
+	my $ppid = $$pid;
+    
+    open STDIN, '/dev/null'  or die "Unable to read (STDIN) from /dev/null. Aborting. $!\n";
+    open STDOUT, '>>/dev/null' or die "Can't write (STDOUT) to /dev/null. Aborting. $!\n";
+    open STDERR, ">>$efile" or die "Can't write (STDERR) to $efile. Aborting. $!\n";
+    
+    defined($ppid = fork()) or die "Unable to fork - ensure this is supported. Aborting. $!\n";
+    exit if $ppid;
+    
+    setsid or die "Unable to start a new session. Aborting. $!";
+    umask 0;
+    
+    $$pid = $$;
+}
+# Name:
+#	save_review_file
+# Pre:
+#	$	= scalar representing the file to save captures for later review
+#	$	= scalar representing the traffic capture to save
+# Post:
+#	returns 0 on success or 1 on failure (can't open file for append)
+sub save_review_file
+{
+	my ($review_file, $traffic, $filtered_cap) = @_;
+	
+	open(FH_OUT, ">>$review_file") || return 1;
+	if($#filtered_cap + 1 > 0){	
+		foreach(@{$filtered_cap})
+		{
+			print FH_OUT "$_\n";
+		}
+	}else{
+		print FH_OUT "$traffic\n";
+	}
+	close(FH_OUT);
+	
+	return 0;
+}
+# Name:
+#	monitor_server
+# Pre:
+#	\$	= reference to a hash containing at least the following fields:
+#		host = the host name where the server is running
+#		port = a valid number (0-65535) to bind to
+#	$	= scalar representing the current process id
+#
+#	Note:
+#		Communication is conducted using UDP.
+# Post:
+#	Finished monitoring as a server or error has occurred
+sub monitor_server
+{
+	my ($arg, $pid) = @_;
+	my $MAX_LEN = 1024;
+	my $protocol = "udp";
+	my $packet = undef;
+	my $date;
+	my $seen;
+	my $total_keys = 0;
+	my $total_count = 0;
+	my $record_id = 0;
+	my $usr_sig = 0;
+	my $socket;
+	my $packet_count = 0;
+	my $notify_message;
+	my $log_msg;
+	my @dt;
+	my @remaining_cache;
+	my %packet_data = (
+							packet  	=> undef,
+							count 		=> 0,
+							bdt			=> undef,
+							edt			=> undef,
+							record_id	=> 0,
+							epoch		=> 0,
+							status		=> undef
+						);
+						
+	%packet_data = ();	#ensure integrity
+	
+	$SIG{USR1} = sub
+	{
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "User signal caught\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "\n\n-- User signal caught (server pid: $pid).\n" unless($arg->{do_daemon});
+		$usr_sig = 1;
+		$total_keys = keys(%packet_data);
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Current records cached: $total_keys\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "Current records cached: $total_keys\n" unless($arg->{do_daemon});
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Checking $arg->{cache_file} for existence of data\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "Checking $arg->{cache_file} for existence of data... " 
+			unless($arg->{do_daemon});
+		if((-e $arg->{cache_file}) && (! -z $arg->{cache_file})){
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Cache data exists\n";
+				log_message($log_msg, $arg->{log_server});
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Reading and merging with existing cache\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Yes.\nReading and merging with existing cache... " 
+				unless($arg->{do_daemon});
+			update_cache($arg->{cache_file}, \%packet_data, $arg->{do_cache_key_dst}, 
+				\@remaining_cache);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Reading and merging of cache done\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "done.\n" unless($arg->{do_daemon});
+		}else{
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Cache data does not exist\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "No.\n" unless($arg->{do_daemon});
+		}
+		$total_keys = keys(%packet_data);
+		if($total_keys > 0){
+			print STDERR "Writing cache to $arg->{cache_file}... " unless($arg->{do_daemon});
+			write_cache(\%packet_data, \$total_count, $arg->{sort_cache_date}, 
+				$arg->{cache_file}, $arg->{do_cache_key_dst}, \@remaining_cache);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Writing cache done\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "done.\n" unless($arg->{do_daemon});
+			$total_keys = keys(%packet_data);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Records (unique/total): $total_keys/$total_count\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Records (unique/total): $total_keys/$total_count\n" 
+				unless($arg->{do_daemon});
+		}else{
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Memory cache is empty\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Memory cache is empty.\n" unless($arg->{do_daemon});
+		}
+		if($arg->{do_notify}){
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Building notification\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Building notification... " unless($arg->{do_daemon});
+			$notify_message = build_notify_message(\%packet_data, $arg->{sort_cache_date}, 
+				$arg->{do_cache_key_dst}, $total_keys, \$total_count);
+			send_notify($notify_message, $arg->{notify_file}, $arg->{notify_server}, 
+				$arg->{notify_mail}, $arg->{name});
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Building notification done\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "done.\n" unless($arg->{do_daemon});
+		}
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Refreshing server\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "Refreshing server... " unless($arg->{do_daemon});
+		%packet_data = ();
+	};
+	
+	$SIG{INT} = sub
+	{
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Interrupt signal caught\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "\n\n-- Interrupt signal caught (server pid: $pid). Wrapping up...\n"
+			unless($arg->{do_daemon});
+		$total_keys = keys(%packet_data);
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Current records cached: $total_keys\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "Current records cached: $total_keys\n" unless($arg->{do_daemon});
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Checking $arg->{cache_file} for existence of data\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "Checking $arg->{cache_file} for existence of data... " 
+			unless($arg->{do_daemon});
+		if((-e $arg->{cache_file}) && (! -z $arg->{cache_file})){
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Cache data exists\n";
+				log_message($log_msg, $arg->{log_server});
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Reading and merging with existing cache\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Yes.\nReading and merging with existing cache... " 
+				unless($arg->{do_daemon});
+			update_cache($arg->{cache_file}, \%packet_data, $arg->{do_cache_key_dst}, 
+				\@remaining_cache);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Reading and merging of cache done\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "done.\n" unless($arg->{do_daemon});
+		}else{
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Cache data does not exist\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "No.\n" unless($arg->{do_daemon});
+		}
+		$total_keys = keys(%packet_data);
+		if($total_keys > 0){
+			print STDERR "Writing cache to $arg->{cache_file}... " unless($arg->{do_daemon});
+			write_cache(\%packet_data, \$total_count, $arg->{sort_cache_date}, 
+				$arg->{cache_file}, $arg->{do_cache_key_dst}, \@remaining_cache);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Writing cache done\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "done.\n" unless($arg->{do_daemon});
+			$total_keys = keys(%packet_data);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Records (unique/total): $total_keys/$total_count\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Records (unique/total): $total_keys/$total_count\n" 
+				unless($arg->{do_daemon});
+		}else{
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Memory cache is empty\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Memory cache is empty.\n" unless($arg->{do_daemon});
+		}
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "$arg->{name} has finished monitoring\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "$arg->{name} (server pid: $pid) has finished monitoring.\n" 
+			unless($arg->{do_daemon});
+		exit(0);
+	};
+	
+	$SIG{TERM} = sub
+	{
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Termination signal caught\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "\n\n-- Termination signal caught (server pid: $pid). Wrapping up...\n" 
+			unless($arg->{do_daemon});
+		$total_keys = keys(%packet_data);
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Current records cached: $total_keys\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "Current records cached: $total_keys\n" unless($arg->{do_daemon});
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Checking $arg->{cache_file} for existence of data\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "Checking $arg->{cache_file} for existence of data... " 
+			unless($arg->{do_daemon});
+		if((-e $arg->{cache_file}) && (! -z $arg->{cache_file})){
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Cache data exists\n";
+				log_message($log_msg, $arg->{log_server});
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Reading and merging with existing cache\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Yes.\nReading and merging with existing cache... " 
+				unless($arg->{do_daemon});
+			update_cache($arg->{cache_file}, \%packet_data, $arg->{do_cache_key_dst}, 
+				\@remaining_cache);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Reading and merging of cache done\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "done.\n" unless($arg->{do_daemon});
+		}else{
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Cache data does not exist\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "No.\n" unless($arg->{do_daemon});
+		}
+		$total_keys = keys(%packet_data);
+		if($total_keys > 0){
+			print STDERR "Writing cache to $arg->{cache_file}... " unless($arg->{do_daemon});
+			write_cache(\%packet_data, \$total_count, $arg->{sort_cache_date}, 
+				$arg->{cache_file}, $arg->{do_cache_key_dst}, \@remaining_cache);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Writing cache done\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "done.\n" unless($arg->{do_daemon});
+			$total_keys = keys(%packet_data);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Records (unique/total): $total_keys/$total_count\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Records (unique/total): $total_keys/$total_count\n" 
+				unless($arg->{do_daemon});
+		}else{
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Memory cache is empty\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "Memory cache is empty.\n" unless($arg->{do_daemon});
+		}
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "$arg->{name} has finished monitoring\n";
+			log_message($log_msg, $arg->{log_server});
+		}
+		print STDERR "$arg->{name} (server pid: $pid) has finished monitoring.\n" 
+			unless($arg->{do_daemon});
+		exit(0);
+	};
+
+	#create server socket
+	$socket = IO::Socket::INET->new (
+										LocalPort => $arg->{port},
+										Proto     => $protocol,
+										Reuse     => 1
+									);
+	die "$!: $arg->{name} can't start server $arg->{host}:$arg->{port} ($protocol)\n" 
+		unless($socket);
+	
+	#server running
+	$date = localtime();
+	$log_msg = "Server Running|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol\n";
+	log_message($log_msg, $arg->{log_server}) if($arg->{do_log});
+	print "Server Running|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol\n"
+		if($arg->{do_stdout});
+	while($socket->recv($packet, $MAX_LEN) || 1) 
+	{
+		if($usr_sig){
+			$packet_count = keys(%packet_data);
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Refreshing of server done\n";
+				log_message($log_msg, $arg->{log_server});
+			}
+			print STDERR "done.\n" unless($arg->{do_daemon});
+			$usr_sig = 0;
+			next if(length($packet) == 0);
+		}
+		$date = localtime();
+		chomp($packet);
+		($packet, $record_id) = split(/\|/, $packet);
+		$seen = build_cache($packet, \%packet_data, $date, $record_id, $arg->{do_cache_key_dst}, 
+					\$src, \$dst);
+		if(! $seen){
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Client Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				if($arg->{do_cache_key_dst}){
+					my $peer = $socket->peerhost.":".$socket->peerport;
+					$log_msg .= "$peer|$protocol|$src > $dst|$record_id\n";
+				}else{
+					$log_msg .= "$peer|$protocol|$packet|$record_id\n";
+				}
+				log_message($log_msg, $arg->{log_server});
+			}
+			if($arg->{do_stdout}){
+				if($arg->{do_cache_key_dst}){
+					$packet = "$src > $dst";
+					printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, $arg->{name}, 
+						$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
+						$protocol, $packet, $record_id);
+				}else{
+					printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, $arg->{name}, 
+						$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
+						$protocol, $packet, $record_id);
+				}
+			}
+			if($arg->{packet_count} > 0){
+				++$packet_count;
+				if($packet_count >= $arg->{packet_count}){
+					if($arg->{do_log}){
+						$date = localtime();
+						$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "Reached packet cache limit of $packet_count\n";
+						log_message($log_msg, $arg->{log_server});
+					}
+					print STDERR "\n\n-- Reached packet cache limit of $packet_count (server pid: $pid).\n" 
+						unless($arg->{do_daemon});
+					$total_keys = keys(%packet_data);
+					if($arg->{do_log}){
+						$date = localtime();
+						$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "Current records cached: $total_keys\n";
+						log_message($log_msg, $arg->{log_server});
+					}
+					print STDERR "Current records cached: $total_keys\n" unless($arg->{do_daemon});
+					if($arg->{do_log}){
+						$date = localtime();
+						$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "Checking $arg->{cache_file} for existence of data\n";
+						log_message($log_msg, $arg->{log_server});
+					}
+					print STDERR "Checking $arg->{cache_file} for existence of data... " 
+						unless($arg->{do_daemon});
+					if((-e $arg->{cache_file}) && (! -z $arg->{cache_file})){
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Cache data exists\n";
+							log_message($log_msg, $arg->{log_server});
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Reading and merging with existing cache\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "Yes.\nReading and merging with existing cache... " 
+							unless($arg->{do_daemon});
+						update_cache($arg->{cache_file}, \%packet_data, $arg->{do_cache_key_dst}, 
+							\@remaining_cache);
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Reading and merging of cache done\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "done.\n" unless($arg->{do_daemon});
+					}else{
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Cache data does not exist\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "No.\n" unless($arg->{do_daemon});
+					}
+					$total_keys = keys(%packet_data);
+					if($total_keys > 0){
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Writing cache to $arg->{cache_file}\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "Writing cache to $arg->{cache_file}... " 
+							unless($arg->{do_daemon});
+						write_cache(\%packet_data, \$total_count, $arg->{sort_cache_date}, 
+							$arg->{cache_file}, $arg->{do_cache_key_dst}, \@remaining_cache);
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Writing cache done\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "done.\n" unless($arg->{do_daemon});
+						$total_keys = keys(%packet_data);
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Records (unique/total): $total_keys/$total_count\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "Records (unique/total): $total_keys/$total_count\n" 
+							unless($arg->{do_daemon});
+					}else{
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Memory cache is empty\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "Memory cache is empty.\n" unless($arg->{do_daemon});
+					}
+					if($arg->{do_notify}){
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Building notification\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "Building notification... " unless($arg->{do_daemon});
+						$notify_message = build_notify_message(\%packet_data, $arg->{sort_cache_date}, 
+							$arg->{do_cache_key_dst}, $total_keys, \$total_count);
+						send_notify($notify_message, $arg->{notify_file}, $arg->{notify_server}, 
+							$arg->{notify_mail}, $arg->{name});
+						if($arg->{do_log}){
+							$date = localtime();
+							$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+							$log_msg .= "Building notification done\n";
+							log_message($log_msg, $arg->{log_server});
+						}
+						print STDERR "done.\n" unless($arg->{do_daemon});
+					}
+					if($arg->{do_log}){
+						$date = localtime();
+						$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "Refreshing server\n";
+						log_message($log_msg, $arg->{log_server});
+					}
+					print STDERR "Refreshing server... " unless($arg->{do_daemon});
+					%packet_data = ();	
+					$packet_count = 0;
+					if($arg->{do_log}){
+						$date = localtime();
+						$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "Refreshing of server done\n";
+						log_message($log_msg, $arg->{log_server});
+					}
+					print STDERR "done.\n" unless($arg->{do_daemon});
+				}
+			}
+		}
+	}
+}
+# Name:
+#	monitor_client
+# Pre:
+#	\$	= reference to a hash containing at least the following fields:
+#		host = the host name where the server is running
+#		port = a valid number (0-65535) to bind to
+#	$	= scalar representing the current process id
+#	\%	= reference to a hash representing the past learned traffic
+#
+#	Note:
+#		Communication is conducted using UDP.
+# Post:
+#	Finished monitoring as a client or error has occurred
+sub monitor_client
+{
+	my ($arg, $pid, $learned) = @_;
+	my $TIME_OUT = 25;
+	my $protocol = "udp";
+	my $usr_sig = 0;
+	my $total_learned = 0;
+	my $socket;
+	my $pcap;
+	my $raw_packet; 
+	my $packet;
+	my $tcp_flag;
+	my $total_net_packets = 0;
+	my $total_ip_packets = 0;
+	my $packet_count = 0;
+	my @parsed_packet;
+	my $record_id = 0;
+	my $match = 0;
+	my $log_msg;
+	my %data;
+	my $ucount = ($arg->{do_unique} == 0) ? "Not enabled" : 0;
+	my $packet_max = ($arg->{packet_count} == 0) ? "Indefinite amount" : $arg->{packet_count};
+	
+	$SIG{USR1} = sub
+	{
+		print STDERR "\n\n-- User signal caught (client pid: $pid). Will refresh client.\n"
+			unless($arg->{do_daemon});
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "User signal caught\n";
+			log_message($log_msg, $arg->{log_client});
+		}
+		$usr_sig = 1;
+	};
+	
+	$SIG{INT} = sub
+	{
+		print STDERR "\n-- Interrupt signal caught. Wrapping up...\n" unless($arg->{do_daemon});
+		$ucount = keys(%data) if($arg->{do_unique});
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Interrupt signal caught\n";
+			log_message($log_msg, $arg->{log_client});
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Total packets (Network, IP, Requested, Captured, Unique): ";
+			$log_msg .= "$total_net_packets, $total_ip_packets, $packet_max, ";
+			$log_msg .= "$packet_count, $ucount\n";
+			log_message($log_msg, $arg->{log_client});
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "$arg->{name} has finished monitoring\n";
+			log_message($log_msg, $arg->{log_client});
+		}
+		unless($arg->{do_daemon}){
+			print STDERR "\nTotal packets:\n";
+			print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
+			print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
+			print STDERR "$arg->{name} (client pid: $pid) has finished monitoring.\n";
+		}
+		exit(0);
+	};
+	
+	$SIG{TERM} = sub
+	{
+		print STDERR "\n-- Termination signal caught. Wrapping up...\n" unless($arg->{do_daemon});
+		$ucount = keys(%data) if($arg->{do_unique});
+		if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Termination signal caught\n";
+			log_message($log_msg, $arg->{log_client});
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Total packets (Network, IP, Requested, Captured, Unique): ";
+			$log_msg .= "$total_net_packets, $total_ip_packets, $packet_max, ";
+			$log_msg .= "$packet_count, $ucount\n";
+			log_message($log_msg, $arg->{log_client});
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "$arg->{name} has finished monitoring\n";
+			log_message($log_msg, $arg->{log_client});
+		}
+		unless($arg->{do_daemon}){
+			print STDERR "\nTotal packets:\n";
+			print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
+			print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
+			print STDERR "$arg->{name} (client pid: $pid) has finished monitoring.\n";
+		}
+		exit(0);
+	};
+
+	#create client socket
+	$socket = IO::Socket::INET->new	(
+										PeerAddr  => $arg->{host},
+										PeerPort  => $arg->{port},
+										Proto     => $protocol
+									);
+	die "$!: $arg->{name} can't connect $arg->{host}:$arg->{port} ($protocol)\n" unless($socket);
+	$socket->autoflush(1);			
+	
+	#client connected
+	$date = localtime();
+	$log_msg = "Client Running|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol\n";
+	log_message($log_msg, $arg->{log_client}) if($arg->{do_log}); 
+	if($arg->{do_stdout}){
+		print "Client Running|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol\n";
+		print "Binding to interface: $arg->{interface}... ";
+	}
+	
+	#create capture device
+	if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Capturing $arg->{snaplen} byte(s)/packet\n";
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Read timeout: $arg->{read_timeout} millisecond(s)\n";
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Binding to interface: $arg->{interface}\n";
+			log_message($log_msg, $arg->{log_client});
+	}
+	$pcap = create_device($arg->{interface}, $arg->{snaplen}, $arg->{promiscuous}, 
+		$arg->{read_timeout});
+	printf("Listening (promiscuous mode = %s)...\n", ($arg->{promiscuous}) ? "Yes": "No")
+		if($arg->{do_stdout});
+	
+	if($arg->{do_log}){
+			$date = localtime();
+			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+			$log_msg .= "Listening (promiscuous mode = $arg->{promiscuous})\n";
+			log_message($log_msg, $arg->{log_client});
+	}
+	
+	#get initial learned record count
+	$total_learned = keys(%{$learned});
+	if($arg->{do_log}){
+		$date = localtime();
+		$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+		$log_msg .= "Learned rules loaded: $total_learned\n";
+		log_message($log_msg, $arg->{log_client});
+	}
+	
+	#client running
+	for(;;)
+	{
+		if($usr_sig){
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Checking if $arg->{lfile} exists\n";
+				log_message($log_msg, $arg->{log_client});
+			}
+			print STDERR "Checking if $arg->{lfile} exists... " unless($arg->{do_daemon});
+			if(-e $arg->{lfile}){
+				if($arg->{do_log}){
+					$date = localtime();
+					$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+					$log_msg .= "$arg->{lfile} does exist\n";
+					log_message($log_msg, $arg->{log_client});
+				}
+				print STDERR "Yes.\n" unless($arg->{do_daemon});
+				if(! -z $arg{lfile}){
+					print STDERR "Processing $arg->{lfile}... " unless($arg->{do_daemon});
+					get_learned($arg->{lfile}, $learned, \$total_learned, 0);
+					print STDERR "success.\n" unless($arg->{do_daemon});
+					$total_learned = keys(%{$learned});
+					if($arg->{do_log}){
+						$date = localtime();
+						$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "Learned rules loaded: $total_learned\n";
+						log_message($log_msg, $arg->{log_client});
+					}
+					print STDERR "Learned rules loaded: $total_learned.\n" unless($arg->{do_daemon});
+				}else{
+					%{$learned} = ();
+					if($arg->{do_log}){
+						$date = localtime();
+						$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "Nothing to load\n";
+						log_message($log_msg, $arg->{log_client});
+						$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "Any previous learned cache now emptied.\n";
+						log_message($log_msg, $arg->{log_client});
+					}
+					print STDERR "nothing to load.\n" unless($arg->{do_daemon});
+				}
+			}else{
+				%{$learned} = ();
+				if($arg->{do_log}){
+					$date = localtime();
+					$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+					$log_msg .= "$arg->{lfile} does not exist\n";
+					log_message($log_msg, $arg->{log_client});
+					$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+					$log_msg .= "Any previous learned cache now emptied.\n";
+					log_message($log_msg, $arg->{log_client});
+				}
+				print STDERR "No.\n" unless($arg->{do_daemon});
+			}
+			$usr_sig = 0;
+		}
+		get_capture_packet($pcap, \$raw_packet, \$packet, \$total_net_packets, 
+				\$total_ip_packets, \$tcp_flag);
+		next if($packet == 0);
+		next if(parse_packet($packet, \@parsed_packet));
+		$match = find_match($learned, \@parsed_packet, \$record_id);
+		next if(($match == 1) && ($learned->{$record_id}{is_authorized} == 1));
+		$record_id = 0 if($match == 0);
+		if($arg->{do_regex_cap}){
+    		next if($packet !~ m/$arg->{regex_cap}/i);
+    	}
+    	$date = localtime();
+		if(($packet_max > 0) && ($packet_count >= $packet_max)){
+			$ucount = keys(%data) if($arg->{do_unique});
+			if($arg->{do_log}){
+				$date = localtime();
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Packet limit of $packet_max reached\n";
+				log_message($log_msg, $arg->{log_client});
+				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+				$log_msg .= "Total packets (Network, IP, Requested, Captured, Unique): ";
+				$log_msg .= "$total_net_packets,  $total_ip_packets, $packet_max, ";
+				$log_msg .= "$packet_count, $ucount\n";
+				log_message($log_msg, $arg->{log_client});
+			}
+			if(($arg->{do_stdout}) && (! $arg->{do_daemon})){
+				print "Packet limit of $packet_max reached. Wrapping up...\n";
+				print "\nTotal packets:\n";
+				print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
+				print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
+			}
+			last;
+		}else{
+			if($arg->{do_unique}){
+				if(! exists($data{$packet})){
+					if($arg->{do_stdout}){
+						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s\n", $date, $arg->{name}, $pid, 
+								$arg->{host}, $arg->{port}, $protocol, $packet, $tcp_flag);
+					}
+					if($arg->{do_log}){
+						$date = localtime();
+						$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+						$log_msg .= "$protocol|$packet|$tcp_flag\n";
+						log_message($log_msg, $arg->{log_client});
+					}
+				}
+				$socket->send("$packet|$record_id") or die("$!: $arg->{name} (pid: $pid) unable ", 
+														"to send to $arg->{host}:$arg->{port}\n");
+				$data{$packet}++;
+			}else{
+				if($arg->{do_stdout}){
+					printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s\n", $date, $arg->{name}, $pid, 
+						$arg->{host}, $arg->{port}, $protocol, $packet, $tcp_flag);
+				}
+				if($arg->{do_log}){
+					$date = localtime();
+					$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+					$log_msg .= "$protocol|$packet|$tcp_flag\n";
+					log_message($log_msg, $arg->{log_client});
+				}
+				$socket->send("$packet|$record_id") or die("$!: $arg->{name} (pid: $pid) unable ", 
+														"to send to $arg->{host}:$arg->{port}\n");
+				$data{$packet_count} = $packet;
+			}
+		}
+		$packet_count++;
+		eval{
+				local $SIG{ALRM} = sub {
+										 print STDERR "$!: $protocol alarm timeout with ";
+										 die "$arg->{host}:$arg->{port}\n";
+										 };
+				alarm $TIME_OUT;
+				alarm 0;
+				1;  #return value from eval on normalcy
+		} or die "$!: unable to bind to $arg->{host}:$arg->{port}\n";
+	}
+}
+# Name:
+#   parse_datetime
+# Pre:
+# 	$ 	= scalar in the format: Day Mon dd hh:mm:ss YYYY
+#	\@  = ref to an array holding the parsed: Day Mon dd hh:mm:ss YYYY
+#
+#	Note:
+#		The reference to the array holds to the following elements:
+#		[0] - Day of week (i.e., Mon - Sun)
+#		[1] - Month (i.e., Jan - Dec)
+#		[2] - Date of week (i.e., 1 - 31)
+#		[3] - Hour (i.e., 01 - 00)
+#		[4] - Minute (i.e., 00 - 59)
+#		[5] - Second (i.e., 00 - 59)
+#		[6] - Year (e.g., 2010)
+# Post:
+#	Array reference holds the parsed information
+sub parse_datetime
+{
+	my ($date, $dt) = @_;
+	my ($dow, $mon, $dd, $tm, $yr) = split(/\s/, $date);
+
+    @{$dt} = split(/:/, $tm, 3);
+	unshift(@{$dt}, $dow, $mon, $dd);
+	push(@{$dt}, $yr);
+}
+# Name:
+#	get_epoch
+# Pre:
+#	\@	= reference to a parsed date/time in the following format:
+#		[0] - Day of week (i.e., Mon - Sun)
+#		[1] - Month (i.e., Jan - Dec)
+#		[2] - Date of week (i.e., 1 - 31)
+#		[3] - Hour (i.e., 01 - 00)
+#		[4] - Minute (i.e., 00 - 59)
+#		[5] - Second (i.e., 00 - 59)
+#		[6] - Year (e.g., 2010)
+#	\$ 	= reference to a scalar to return the epoch value
+#
+#	Note:
+#		The day of week is not used to compute the epoch value. The
+#		date of week value is sufficient. 
+# Post:
+#	Epoch value returned via reference
+sub get_epoch
+{
+    my ($dt, $epoch) = @_;
+    my	%month	= (
+					Jan => 0,
+					Feb => 1,
+					Mar => 2,
+					Apr => 3,
+					May	=> 4,
+					Jun	=> 5,
+					Jul	=> 6,
+					Aug	=> 7,
+					Sep	=> 8,
+					Oct	=> 9,
+					Nov	=> 10,
+					Dec	=> 11
+				);
+
+    $$epoch = timelocal_nocheck($dt->[5], $dt->[4], $dt->[3], $dt->[2], 
+    	$month{$dt->[1]}, $dt->[6]);						
+}
+# Name:
+#	build_cache
+# Pre:
+#	$	= scalar representing the received packet in the format:
+#		src_ip:port > dst_ip:port
+#	\%	= reference to a hash containg the cache to fill
+#	$	= scalar representing the date/time (e.g. from a call to localtime())
+#	$	= scalar representing the record id that was matched as 
+#		unauthorized traffic previously set, or 0 if unlearned.
+#	$	= scalar representing what to use as the cache unique key:
+#		0 = src_ip:port > dst_ip:port (received packet) is the key
+#		1 = dst:port will be the key
+#	
+#	Note:
+#		The default will have the formatted packet as the key due to 
+#		performance: "source_ip:port > destination_IP:port"
+#		
+#		However, it is more realistic to have the key be unique by 
+#		destination/port assignment: "destination_ip:port"
+#
+#		If the key is chosen to be the destination/port and only the 
+#		"response" is captured, then it will cause the true source to 
+#		become the key. 
+#		
+#		Example:
+#		192.168.0.1:1298 > 192.168.0.65:22 (missed this packet)
+#		192.168.0.65:22 > 192.168.0.1:1298 (response, captured this packet)
+#		
+#		The logic will not see 192.168.0.1:1298 as an existing key and thus 
+#		will add it and create 192.168.0.65 as the sub key. Nothing can be 
+#		done to avoid this. The other way this can occur is if a source 
+#		initiates traffic from a well known port to the destination on an 
+#		ephemeral port.
+# Post:
+#	Server cache built; Returns whether or not the packet was seen prior
+#	0 = No; 1 = Yes
+sub build_cache
+{
+	my ($packet, $packet_data, $date, $record_id, $do_cache_key_dst, $src, $dst) = @_;
+	my $epoch;
+	my $seen;
+	my @dt;
+	my @parsed_packet;
+	
+	if($do_cache_key_dst){
+		parse_packet($packet, \@parsed_packet);
+		my $src_cap = "$parsed_packet[0]:$parsed_packet[1]";
+		my $dst_cap = "$parsed_packet[2]:$parsed_packet[3]";
+		$src_cap =~ s/\s//g;
+		$dst_cap =~ s/\s//g;
+		if(! exists($packet_data->{$dst_cap})){
+			if(! exists($packet_data->{$src_cap})){	
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{key} = $parsed_packet[0]; 
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{packet} = $packet;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{count} = 1;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{bdt} = $date;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{edt} = $date;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{record_id} = $record_id;
+				parse_datetime($packet_data->{$dst_cap}->{$parsed_packet[0]}{bdt}, \@dt);
+				get_epoch(\@dt, \$epoch);
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{epoch} = $epoch;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{status} = "New";
+				$$src = $parsed_packet[0];
+				$$dst = $dst_cap;
+				$seen = 0;
+			}else{
+				if(exists($packet_data->{$src_cap}->{$parsed_packet[2]})){
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{count}++;
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{edt} = $date;
+					$seen = 1;
+				}else{
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{key} = $parsed_packet[2];
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{packet} = $packet;
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{count} = 1;
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{bdt} = $date;
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{edt} = $date;
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{record_id} = $record_id;
+					parse_datetime($packet_data->{$src_cap}->{$parsed_packet[2]}{bdt}, \@dt);
+					get_epoch(\@dt, \$epoch);
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{epoch} = $epoch;
+					$packet_data->{$src_cap}->{$parsed_packet[2]}{status} = "New";
+					$$src = $parsed_packet[2];
+					$$dst = $src_cap;
+					$seen = 0;
+				}
+			}
+		}else{
+			if(exists($packet_data->{$dst_cap}->{$parsed_packet[0]})){
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{edt} = $date;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{count}++;
+				$seen = 1;
+			}else{		
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{key} = $parsed_packet[0];
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{packet} = $packet;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{count} = 1;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{bdt} = $date;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{edt} = $date;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{record_id} = $record_id;
+				parse_datetime($packet_data->{$dst_cap}->{$parsed_packet[0]}{bdt}, \@dt);
+				get_epoch(\@dt, \$epoch);
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{epoch} = $epoch;
+				$packet_data->{$dst_cap}->{$parsed_packet[0]}{status} = "New";
+				$$src = $parsed_packet[0];
+				$$dst = $dst_cap;
+				$seen = 0;
+			}
+		}
+	}else{
+		if(! exists($packet_data->{$packet})){
+			$packet_data->{$packet}{packet} = $packet; 
+			$packet_data->{$packet}{count} = 1;
+			$packet_data->{$packet}{bdt} = $date;
+			$packet_data->{$packet}{record_id} = $record_id;
+			parse_datetime($packet_data->{$packet}{bdt}, \@dt);
+			get_epoch(\@dt, \$epoch);
+			$packet_data->{$packet}{epoch} = $epoch;
+			$packet_data->{$packet}{status} = "New";
+			$seen = 0;
+		}else{
+			$packet_data->{$packet}{count}++;
+			$seen = 1;
+		}
+		$packet_data->{$packet}{edt} = $date;
+	}
+
+	return $seen;
+}
+# Name:
+#	update_cache
+# Pre:
+#	$	= scalar representing the cache file to read
+#	\%	= reference to a hash representing the cached packet data
+#	$	= scalar representing the key to group the cached data
+#	\@	= reference to an array to hold cached data that does not 
+#		match current format (based on what is being used as the cache key)
+#
+#	Note:
+#		Comments are ignored and not saved because the order of the records 
+#		is not guaranteed when the cache is merged and written. Blank lines
+#		are ignored for what should be obvious reasons.
+# Post:
+#	Server cache retrieved
+sub update_cache
+{
+	my ($cache_file, $packet_data, $do_cache_key_dst, $remaining_cache) = @_;
+	my @cache_line;
+	my @dt;
+	my $src;
+	my $dst;
+	my $epoch;
+	
+	open(FH_IN, $cache_file);
+	if($do_cache_key_dst){
+		while(<FH_IN>)
+		{	
+			next if($_ =~ m/^#/ || $_ =~ m/^\s+$/);
+			if($_ =~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s>\s 
+					\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\|\d+\|
+					\D{3}\s+\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}\|
+					\D{3}\s+\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}\|\d+$/x){	
+				chomp;
+				(@cache_line) = split(/\|/, $_);
+				($src, $dst) = split(/>/, $cache_line[0]);
+				$src =~ s/\s//g;
+				$dst =~ s/\s//g;
+				if(! exists($packet_data->{$dst})){
+					$packet_data->{$dst}->{$src}{key} = $src;
+					$packet_data->{$dst}->{$src}{packet} = $cache_line[0];
+					$packet_data->{$dst}->{$src}{count} = $cache_line[1];
+					$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
+					$packet_data->{$dst}->{$src}{edt} = $cache_line[3];
+					$packet_data->{$dst}->{$src}{record_id} = $cache_line[4];
+				}else{
+					if(! exists($packet_data->{$dst}->{$src})){
+						$packet_data->{$dst}->{$src}{key} = $src;
+						$packet_data->{$dst}->{$src}{packet} = $cache_line[0];
+						$packet_data->{$dst}->{$src}{count} = $cache_line[1];
+						$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
+						$packet_data->{$dst}->{$src}{edt} = $cache_line[3];
+						$packet_data->{$dst}->{$src}{record_id} = $cache_line[4];
+					}else{
+						$packet_data->{$dst}->{$src}{count} += $cache_line[1];
+						$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
+						$packet_data->{$dst}->{$src}{status} = "Update";
+					}
+					parse_datetime($packet_data->{$dst}->{$src}{bdt}, \@dt);
+					get_epoch(\@dt, \$epoch);
+					$packet_data->{$dst}->{$src}->{epoch} = $epoch;
+				}
+			}else{
+				push(@{$remaining_cache}, $_);
+			}
+		}
+	}else{
+		while(<FH_IN>)
+		{
+			next if($_ =~ m/^#/ || $_ =~ m/^\s+$/);
+			if($_ =~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\s>\s 
+							\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\|\d+\|
+							\D{3}\s+\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}\|
+							\D{3}\s+\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}\|\d+$/x){
+				chomp;
+				(@cache_line) = split(/\|/, $_);
+				if(! exists($packet_data->{$cache_line[0]})){
+					$packet_data->{$cache_line[0]}{packet} = $cache_line[0]; 
+					$packet_data->{$cache_line[0]}{count} = $cache_line[1];
+					$packet_data->{$cache_line[0]}{bdt} = $cache_line[2];
+					$packet_data->{$cache_line[0]}{edt} = $cache_line[3];
+					$packet_data->{$cache_line[0]}{record_id} = $cache_line[4];
+				}else{
+					$packet_data->{$cache_line[0]}{count} += $cache_line[1];
+					$packet_data->{$cache_line[0]}{bdt} = $cache_line[2];
+					$packet_data->{$cache_line[0]}{status} = "Update";
+				}
+				parse_datetime($packet_data->{$cache_line[0]}{bdt}, \@dt);
+				get_epoch(\@dt, \$epoch);
+				$packet_data->{$cache_line[0]}{epoch} = $epoch;
+			}else{
+				push(@{$remaining_cache}, $_);
+			}
+		}
+	}
+	close(FH_IN);
+}
+# Name:
+#	write_cache
+# Pre:
+#	\%	= reference to a hash containing the cache to sort
+#	\$ 	= reference to a scalar containing the summed counts
+#	$	= scalar representing whether to sort by first seen date
+#	$	= scalar representing the cache file to write to
+#	$	= scalar representing what key to use for sorting
+#	\@	= reference to an array to holding cached data that does not 
+#		match current format (based on what is being used as the cache key)
+#	Note:
+#		This function sorts the date in ascending order only.
+# Post:
+#	Server cache written; dies on error (can't open file for write)
+sub write_cache
+{
+	my ($packet_data, $total_count, $sort_cache_date, $cache_file, 
+		$do_cache_key_dst, $remaining_cache) = @_;
+	
+	open(FH_OUT, ">$cache_file") || die "Error opening file: $cache_file for write. $!\n";
+	if($do_cache_key_dst){
+		if($sort_cache_date){
+			while(my ($dst, $src_row) = each %{$packet_data})
+			{
+				foreach $el (sort{$a->{epoch} <=> $b->{epoch}} values %{$src_row})
+				{
+					$$total_count += $el->{count};
+					print FH_OUT "$el->{key} > $dst|$el->{count}|$el->{bdt}|$el->{edt}|";
+					print FH_OUT "$el->{record_id}\n";
+				}
+			}
+		}else{
+			while(my ($dst, $src_row) = each %{$packet_data})
+			{
+				for my $src (keys %{$src_row})
+				{
+					$$total_count += $src_row->{$src}{count};
+					print FH_OUT "$src > $dst|$src_row->{$src}{count}|$src_row->{$src}{bdt}|";
+					print FH_OUT "$src_row->{$src}{edt}|$src_row->{$src}{record_id}\n";
+				}
+			}
+		}
+	}else{
+		if($sort_cache_date){
+			foreach $el (sort{$a->{epoch} <=> $b->{epoch}} values %{$packet_data})
+			{
+				$$total_count += $el->{count};
+				print FH_OUT "$el->{packet}|$el->{count}|$el->{bdt}|$el->{edt}|$el->{record_id}\n";
+			}
+		}else{
+			for my $k (keys %{$packet_data})
+			{
+				$$total_count += $packet_data->{$k}{count};
+				print FH_OUT "$packet_data->{$k}{packet}|$packet_data->{$k}{count}|";
+				print FH_OUT "$packet_data->{$k}{bdt}|$packet_data->{$k}{edt}|";
+				print FH_OUT "$packet_data->{$k}{record_id}\n";
+			}
+		}
+	}
+	
+	foreach(@{$remaining_cache})
+	{
+		print FH_OUT;
+	}
+	close(FH_OUT);
+}
+# Name:
+#	build_notify_message
+# Pre:
+#	\%	= reference to a hash containing the server cached data to build
+#		notification
+#	$	= scalar representing whether to sort by first seen date
+#	$	= scalar representing what key to use for sorting
+#	$	= scalar representing the total unique cached records (primary keys)
+#	\$	= reference to a scalar holding the summed packet count	
+#
+#	Note:
+#		Should be called only after server cache has been updated/merged.
+# Post:
+#	Server notification built and returned
+sub build_notify_message
+{
+	my ($packet_data, $sort_cache_date, $do_cache_key_dst, $total_records, $total_count) = @_;
+	my $notify_message = "\t\t\t\t\t\t\t\tNotification Message:\n";
+	
+	$$total_count = 0;	#ensure integrity
+	
+	if($total_records > 0){
+		if($do_cache_key_dst){
+			if($sort_cache_date){
+				while(my ($dst, $src_row) = each %{$packet_data})
+				{
+					$notify_message .= "\nDestination: $dst\n";
+					foreach $el (sort{$a->{epoch} <=> $b->{epoch}} values %{$src_row})
+					{
+						$$total_count += $el->{count};
+						$el->{record_id} = "N/A" if($el->{record_id} == 0);
+						$notify_message .= "\tSource: $el->{key}\tCount: $el->{count}\t";
+						$notify_message .= "First Seen: $el->{bdt}\tLast Seen: $el->{edt}\t";
+						$notify_message .= "Rule Violation: $el->{record_id}\tStatus: $el->{status}\n";
+					}
+				}
+			}else{
+				while(my ($dst, $src_row) = each %{$packet_data})
+				{
+					$notify_message .= "\nDestination: $dst\n";
+					for my $src (keys %{$src_row})
+					{
+						$$total_count += $src_row->{$src}{count};
+						$src_row->{$src}{record_id} = "N/A" if($src_row->{$src}{record_id} == 0);
+						$notify_message .= "\tSource: $src_row->{$src}{key}\t";
+						$notify_message .= "Count: $src_row->{$src}{count}\t";
+						$notify_message .= "First Seen: $src_row->{$src}{bdt}\t";
+						$notify_message .= "Last Seen: $src_row->{$src}{edt}\t";
+						$notify_message .= "Rule Violation: $src_row->{$src}{record_id}\t";
+						$notify_message .= "Status: $src_row->{$src}{status}\n";
+					}
+				}
+			}
+		}else{
+			if($sort_cache_date){
+				foreach $el (sort{$a->{epoch} <=> $b->{epoch}} values %{$packet_data})
+				{
+					$$total_count += $el->{count};
+					$el->{record_id} = "N/A" if($el->{record_id} == 0);
+					$notify_message .= "Source/Destination: $el->{packet}\tCount: $el->{count}\t";
+					$notify_message .= "First Seen: $el->{bdt}\tLast Seen: $el->{edt}\t";
+					$notify_message .= "Rule Violation: $el->{record_id}\tStatus: $el->{status}\n";
+				}
+			}else{
+				for my $k (keys %{$packet_data})
+				{
+					$$total_count += $packet_data->{$k}{count};
+					$packet_data->{$k}{record_id} = "N/A" if($packet_data->{$k}{record_id} == 0);
+					$notify_message .= "Source/Destination: $packet_data->{$k}{packet}\t";
+					$notify_message .= "Count: $packet_data->{$k}{count}\t";
+					$notify_message .= "First Seen: $packet_data->{$k}{bdt}\t";
+					$notify_message .= "Last Seen: $packet_data->{$k}{edt}\t";
+					$notify_message .= "Rule Violation: $packet_data->{$k}{record_id}\t";
+					$notify_message .= "Status: $packet_data->{$k}{status}\n";
+				}
+			}
+		}
+		$notify_message .= "\n\t\t\t\t\t\t\t\tUnique Records: $total_records"; 
+		$notify_message .= "\t\tPacket Count: $$total_count\n";
+	}else{
+		$notify_message .= "There is no past data or current data cached to report.\n";
+		$notify_message .= "If this is believed to be in error, check configuration or logs.\n";
+	}
+	
+	return $notify_message;
+}
+# Name:
+#	send_notify
+# Pre:
+#	$	= scalar representing the message to create
+#	$	= scalar representing the notification file
+#	$	= scalar representing the mail server
+#	$	= scalar representing a list of email recipients, 
+#		delimitted by a space
+#	$	= scalar representing who is responsible for sending
+# Post:
+#	Notification created/sent
+sub send_notify
+{
+	my ($notify_message, $notify_file, $notify_server, $notify_mail, $sender) = @_;
+	
+	my $subject = "$sender notification message";
+	my $body = "This message was sent by $sender. It is intended to inform of unauthorized\n";
+	$body .= "or unkown network traffic. To view activity, please see the attachment.\n";
+	
+	#write notifiction
+	open(FH_NOTIFY_OUT, ">$notify_file") || warn "Error opening file: notify_file. $!\n";
+	print FH_NOTIFY_OUT $notify_message;
+	close(FH_NOTIFY_OUT);
+	
+	#attach notification
+	if(defined($notify_server) && defined($notify_mail)){
+		my ($msg_path, $msg_file) = $notify_file =~ m/(.*\/|\\)(.*)$/;
+		(@alias) = split(/\s/, $notify_mail);
+		foreach(@alias)
+		{
+			my $msg = MIME::Lite->new(
+										From 	=> $sender,
+										To 		=> $_,
+										Subject => $subject,
+										Type 	=> 'multipart/mixed'
+									); 	#or warn("Error creating multipart container: $!\n",
+										#		"Unable to send notification via e-mail.\n");
+			$msg->attach(
+							Type => 'TEXT',
+							Data => $body."\r\n"
+						); #or warn "Error adding body: $body. $!\n";
+			
+			$msg->attach (
+							Type 		=> 'text/plain',
+							Path 		=> $msg_path.$msg_file,
+							Filename 	=> $msg_file,
+							Disposition => 'attachment'
+						); #or warn "Error adding attachment: $notify_file. $!\n";
+			MIME::Lite->send('smtp', $notify_server, Timeout => 60);
+			$msg->send;
+		}
+	}
+}
+# Name:
+#	log_message
+# Pre:
+#	$ 	= scalar representing what to log.
+#	$	= scalar representing the file to log to
+#
+#	Note:
+#		Logs are appended. This function does not format 
+#		the message in any way (including terminating with 
+#		a newline etc).
+# Post:
+#	Log written or dies on error
+sub log_message
+{
+	my ($message, $log) = @_;
+	
+	open(FH_LOG_OUT, ">>$log") || die "Error opening log: $log. $!\n";
+	print FH_LOG_OUT $message;
+	close(FH_LOG_OUT);
+}
+# Name:
+#	clear_screen
+# Pre:
+#	none
+#
+#	Note:
+#		Should be a portable way to clear the console.
+# Post:
+#	Console screen cleared
+sub clear_screen
+{
+	print "\033[2J";
+	print "\033[0;0f";	
+}
+# Name:
+#	usage
+# Pre:
+#	\% 	= reference to a hash representing the command line arguments passed 
+#		by the user
+# Post:
+#	Usage information sent to STDERR
+sub usage
+{
+	my ($arg) = @_;
+	
+   	die "Invalid input (try: -h or --help).\n" unless($ARGV[0] =~ m/^(\-h|--help)\b/);
+   	print STDERR "Usage:\n";
+   	print STDERR "\t$arg->{name} <command> [option ...]\n";
+   	print STDERR "\t$arg->{name} [option ...] <command>\n";
+   	
+   	#commands
+	print STDERR "\n\t[Commands]:\n\n";
+	print STDERR "-li, --list-interfaces\n";
+	print STDERR "\t# List all available interfaces and exit. Useful when\n";
+	print STDERR "\t# capturing (see: --capture, --interface).\n\n";
+    print STDERR "-c, --capture\n";
+    print STDERR "\t# Capture packets from an interface. Useful prior to one\n";
+    print STDERR "\t# deciding to learn (see: --learn) or monitoring traffic\n";
+    print STDERR "\t# (see: --monitor). By default, $arg->{name} will use the\n";
+    print STDERR "\t# default interface device for the system. If another device\n";
+    print STDERR "\t# is preferred, you can pass this instead (see: --interface)\n";
+    print STDERR "\t# If you are not sure what devices are available, you can\n";
+    print STDERR "\t# leverage various commands to provide a list. Alternatively,\n";
+    print STDERR "\t# $arg->{name} can attempt to do so (see: --list-interfaces).\n\n";
+    print STDERR "-l, --learn\n";
+    print STDERR "\t# Learn from previously captured packets. This is useful to\n";
+    print STDERR "\t# prepare for monitoring traffic (see: --monitor). It is not\n";
+    print STDERR "\t# required to use this command prior to monitoring, but it is\n";
+    print STDERR "\t# requried to capture in order to use this command (see: --capture).\n";
+    print STDERR "\t# It is possible to manually create rules, but it is recommended\n";
+    print STDERR "\t# to use this command. To test rule matching, you can test a\n";
+    print STDERR "\t# given traffic pattern (source/destination) against a regular\n";
+    print STDERR "\t# expression or general match criteria (see: --test-re). IMPORTANT:\n";
+    print STDERR "\t# processing of rules works like a firewall so ensure more specific\n";
+    print STDERR "\t# rules reside above less specific rules. For example, the last\n";
+    print STDERR "\t# rule would generally be: ... 0.0.0.0/0:* > 0.0.0.0/0:*... as it\n";
+    print STDERR "\t# would match ALL traffic once hit.\n\n";
+	print STDERR "-m, --monitor <--server | --client> <host> <port>\n";
+	print STDERR "\t# Monitor traffic over a network. A USR1 signal will cause\n"; 
+	print STDERR "\t# $arg->{name} to either refresh the running server cache\n";
+	print STDERR "\t# (--server) or reload the in-memory learned rules of a\n";
+	print STDERR "\t# running client (--client). The server will also notify if\n"; 
+	print STDERR "\t# notifications are enabled (see --notify), a USR1 signal is\n";
+	print STDERR "\t# sent to the process ID of a client/server, or <count> is\n";
+	print STDERR "\t# reached (see: packet-count). This command is most useful once\n";
+	print STDERR "\t# you believe you have captured sufficient traffic for the given\n";
+	print STDERR "\t# environment (see: --capture) and/or have sufficiently created\n";
+	print STDERR "\t# rules to minimize false positives/negatives (see: --learn).\n\n";
+	print STDERR "--sort-learn=<auth | unauth> [lfile]\n";
+	print STDERR "\t# Sorts learned data by authorized or unauthorized. Should [lfile]\n";
+	print STDERR "\t# be omitted, then $arg->{lfile} is used. This command is useful\n";
+	print STDERR "\t# after one has learned traffic (see: --learn) or created rules\n";
+	print STDERR "\t# manually.\n\n";
+	print STDERR "--test-re <packet_pattern> <expression>\n";
+	print STDERR "\t# Tests <packet_pattern> against <expression>. Useful for\n";
+	print STDERR "\t# ensuring learned rules that use regular expressions are\n";
+	print STDERR "\t# accurate. For example, the following would test that an\n";
+	print STDERR "\t# IP within the 192.168.0.0/16 (192.168.0.10) where HTTP/S\n";
+	print STDERR "\t# traffic matches a rule being considered:\n";
+	print STDERR "\t# \"192.168.0.10:80\" \"192.168.0.0/16:80|443\"\n\n";
+	print STDERR "-gr, --get-range <cidr>\n";
+	print STDERR "\t# Return an IP range, given <cidr>. This can be useful when\n";
+	print STDERR "\t# CIDR blocks may not suffice. This could be because a given\n";
+	print STDERR "\t# IP rnage covers too many CIDR blocks and thus would require\n";
+	print STDERR "\t# a rule for each CIDR. Additionally, perhaps there are IPs that\n";
+	print STDERR "\t# are authorized versus those that are not, but they are contained\n";
+	print STDERR "\t# within the same CIDR blocks. Instead, a regular expression would\n";
+	print STDERR "\t# would solve both of these issues. To ensure you get the expression\n";
+	print STDERR "\t# to properly conver what is needed, this command can be used to\n";
+	print STDERR "\t# return a given IP range from which you can build the expression.\n";
+	print STDERR "\t# For example, to return the IP range for 10.0.0.0/8\n";
+	print STDERR "\t# ... --get-range 10.0.0.0/8\n\n";
+    print STDERR "-gc, --get-cidr <ip-range>\n"; 
+    print STDERR "\t# Return CIDR blocks, given <ip-range>. This can be useful to\n";
+    print STDERR "\t# ensure all CIDR blocks are covered for various rules. For\n";
+    print STDERR "\t# example, to return the CIDR blocks, given <ip-range>:\n"; 
+    print STDERR "\t# ... --get-cidr \"172.20.0.0-10-172.40.255.255\"\n\n";
+    print STDERR "-v, --version\n";
+    print STDERR "\t# Display the $arg->{name} version and exit.\n\n";
+    print STDERR "-h, --help\n";
+    print STDERR "\t# Display this menu and exit.\n\n";
+    
+    #options
+    print STDERR "\n\t[Options]:\n\n";
+    print STDERR "-C, --Config [config-file]\n"; 
+    print STDERR "\t# Tells $arg->{name} to read <config-file> for user\n";
+    print STDERR "\t# options. Any option specified on the command-line will\n";
+    print STDERR "\t# overwrite the configuration option. If <config-file> is\n";
+    print STDERR "\t# omitted, $arg->{config_file} is used. Useful to use with:\n";
+    print STDERR "\t# --capture, --learn, --monitor\n\n";
+    print STDERR "-s, --stdout\n";
+    print STDERR "\t# Traffic is also sent to stdout if possible. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor\n\n";
+    print STDERR "-i, --interface <device>\n";
+    print STDERR "\t# Uses <device> to listen for traffic. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
+    print STDERR "-S, --snaplen <bytes>\n";
+    print STDERR "\t# Specifies the maximum number of bytes to capture from\n";
+    print STDERR "\t# each packet. Must be in the range of 38-65535. If not\n";
+    print STDERR "\t# specified, the default of 64 bytes is used. Useful to use\n";
+    print STDERR "\t# with: --capture, --monitor (--client)\n\n";
+    print STDERR "-rt, --read-timeout <ms>\n";
+    print STDERR "\t# Specifies a read timeout in milliseconds. The read timeout\n";
+    print STDERR "\t# is used to arrange that the read not necessarily return\n";
+    print STDERR "\t# immediately when a packet is seen, but that it wait for\n";
+    print STDERR "\t# some amount of time to allow more packets to arrive and\n";
+    print STDERR "\t# to read multiple packets from the OS kernel in one\n";
+    print STDERR "\t# operation. Not all platforms support a read timeout; on\n";
+    print STDERR "\t# platforms that don't, the read timeout is ignored. Must\n";
+    print STDERR "\t# be in the range of 1-60000 (or 0 to 60 seconds). A zero\n";
+    print STDERR "\t# value on platforms that support a read timeout, will cause\n";
+    print STDERR "\t# a read to wait forever to allow enough packets to arrive\n";
+    print STDERR "\t# with no timeout. If not specified, the read timeout will\n";
+    print STDERR "\t# default to 5 milliseconds (or .005 seconds). Useful to use\n";
+    print STDERR "\t# with: --capture, --monitor (--client)\n\n";
+    print STDERR "-p, --promiscuous\n";
+    print STDERR "\t# Places device into promiscuous mode before capturing. Useful\n";
+    print STDERR "\t# to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
+    print STDERR "-pc, --packet-count <count>\n";
+    print STDERR "\t# Capture <count> packets or until an interrupt signal is\n";
+    print STDERR "\t# received. A count of 0 is equal to omitting this option.\n";
+    print STDERR "\t# In --server mode, <count> signals when to dump and\n";
+    print STDERR "\t# refresh the server's cache. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor\n\n";
+    print STDERR "-u, --unique\n"; 
+    print STDERR "\t# Will only return unique traffic when capturing. Useful to use\n";
+    print STDERR "\t# with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
+    print STDERR "-cf, --capture-file [cfile]\n";
+    print STDERR "\t# Where $arg->{name} will write (capture mode) or read\n";
+    print STDERR "\t# (learn mode) captures. If option or [cfile] is omitted\n"; 
+    print STDERR "\t# $arg->{cfile} is used. Useful to use with:\n";
+    print STDERR "\t# --capture, --learn\n\n";
+    print STDERR "-lf, --learn-file [lfile]\n"; 
+    print STDERR "\t# Learned traffic will be stored in [lfile] (learn mode)\n";
+    print STDERR "\t# or used to load learned traffic in order for a\n";
+    print STDERR "\t# $arg->{name} client to compare captures against. If\n";
+    print STDERR "\t# option or [lfile] is omitted, then $arg->{lfile} is\n";
+    print STDERR "\t# used. Useful to use with:\n";
+    print STDERR "\t# --learn, --monitor (--client)\n\n";
+    print STDERR "-nc, --no-comment\n";
+    print STDERR "\t# Suppresses user comments when learning. Useful to use with:\n";
+    print STDERR "\t# --learn\n\n"; 
+    print STDERR "-nr, --no-reverse\n";
+    print STDERR "\t# Do not create rules for inverse traffic when learning. Usefule\n";
+    print STDERR "\t# to use with:\n";
+    print STDERR "\t# --learn\n\n";
+    print STDERR "-re, --regex <expression [,...]>\n";
+    print STDERR "\t# Returns captures matching <expression>. Note, this\n";
+    print STDERR "\t# feature can cause performance issues. Use with\n";
+    print STDERR "\t# caution. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
+    print STDERR "-n, --notify [<smtp-host>=<alias [,...]>] | [out=<file>]\n";
+    print STDERR "\t# Tells $arg->{name} to create a notification message. If\n";
+    print STDERR "\t# <file> is omitted, $arg->{notify_file} is used. If\n";
+    print STDERR "\t# emailing, then the $arg->{name} server will send\n";
+    print STDERR "\t# notifications to <alias>, using <smtp-host>. This\n";
+    print STDERR "\t# option is used by a $arg->{name} server and triggered\n";
+    print STDERR "\t# by a USR1 signal or if <count> is reached (see\n";
+    print STDERR "\t# --packet-count). Useful to use with:\n";
+    print STDERR "\t# --monitor (--server)\n\n";
+   	print STDERR "--cache-file [cache-file]\n";
+   	print STDERR "\t# Determines where a $arg->{name} server will store\n";
+   	print STDERR "\t# cached traffic. If option or [cache-file] is omitted,\n";
+   	print STDERR "\t# $arg->{cache_file} is used. Useful to use with:\n";
+   	print STDERR "\t# --monitor (--server)\n\n";
+    print STDERR "--sort-cache-date\n";
+    print STDERR "\t# Prior to refreshing a server's cache or notifying, the\n";
+    print STDERR "\t# $arg->{name} server will sort by the packet date first\n";
+    print STDERR "\t# seen. Useful to use with:\n";
+    print STDERR "\t# --monitor (--server)\n\n";
+    print STDERR "--cache-key-dst\n";
+    print STDERR "\t# Causes a $arg->{name} server to use 'destination:port'\n";
+    print STDERR "\t# as the cache key instead of the default cache key of\n";
+    print STDERR "\t# 'source:port > destination:port'. It can be useful when\n";
+    print STDERR "\t# you want to keep track of 'true' source to destination\n"; 
+    print STDERR "\t# packets (e.g., notification messages). Useful to use with:\n";
+    print STDERR "\t# --monitor (--server)\n\n";
+    print STDERR "--log=<server | client> [file]\n";
+    print STDERR "\t# Tells $arg->{name} what log to use, when in monitor\n";
+    print STDERR "\t# mode. If [file] is omitted, $arg->{name} will use:\n";
+    print STDERR "\t# $arg->{log_server} and $arg->{log_client}, respectively.\n";
+    print STDERR "\t# Useful to use with:\n";
+    print STDERR "\t# --monitor\n\n";
+    print STDERR "-d, --daemon\n";
+    print STDERR "\t# Forces a $arg->{name} server or client to start up as a\n";
+    print STDERR "\t# daemon, when monitoring. Useful to use with:\n";
+    print STDERR "\t# --monitor\n\n";
+    print STDERR "\n[Note]:\n";
+    print STDERR "--> Sufficient permissions (e.g., root) may be required for:\n";
+    print STDERR "\t-li, --list-interfaces\n";
+    print STDERR "\t-c, --capture\n";
+    print STDERR "\t-m, --monitor --client\n";
+    print STDERR "--> In daemon mode, errors will be written to:\n";
+    print STDERR "\t$arg->{error_file}\n\n";
+    
+    exit(0);
+}

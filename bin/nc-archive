@@ -1,0 +1,65 @@
+#!/bin/bash
+##################################################
+#Purpose:
+#	Archive netcap's cache and notification 
+#	files (if they exist).
+#Developer:
+#       Ray Daley
+#Notes:
+#	- This script is intended to be used with 
+#	the netcap program.
+#	- You may need to set the path for the 
+#	bash interpreter above if it is different 
+#	then: "/bin/bash"
+##################################################
+
+ARCH_DT=`date -j +%m%d%Y`
+
+#	1. Set the below variables for:
+#		A. Name of the netcap's cache file
+#		B. Absolute path for netcap's cache file
+#		C. Absolute path of where to archive cache file
+#		or set to $CACHE_LOC if it is the same location
+#		D. Name of netcap's notification file
+#		E. Absolute path for netcap notifications
+#		F. Absolute path of where to archive notifications
+#		or set to $NOTIFY_LOC if it is the same location
+#	2. Uncomment each variable line
+
+#CACHE_FILE=
+#CACHE_LOC=/path/to/netcap/cache-file
+#ARCH_CACHE_LOC=$CACHE_LOC
+
+#NOTIFY_FILE=
+#NOTIFY_LOC=/path/to/netcap/notify-file
+#ARCH_NOTIFY_LOC=$NOTIFY_LOC
+
+echo "Attempting to archive $CACHE_FILE..."
+if [[ -e $CACHE_LOC$CACHE_FILE ]]; then
+	echo "Checking for $CACHE_FILE within $CACHE_LOC... Yes."
+	cp $CACHE_LOC$CACHE_FILE $ARCH_CACHE_LOC$CACHE_FILE.$ARCH_DT
+	echo "Clearing cache file."
+	>$CACHE_LOC$CACHE_FILE
+	echo
+	echo "$CACHE_FILE has been archived."
+	STATUS=0
+else
+	echo "Checking for $CACHE_FILE within $CACHE_LOC... No."
+	STATUS=1
+fi
+
+echo
+echo "Attempting to archive $NOTIFY_FILE..."
+if [[ -e $NOTIFY_LOC$NOTIFY_FILE ]]; then 
+	echo "Checking for $NOTIFY_FILE within $NOTIFY_LOC... Yes."
+	cp $NOTIFY_LOC$NOTIFY_FILE $ARCH_NOTIFY_LOC$NOTIFY_FILE.$ARCH_DT
+	echo
+	echo "$NOTIFY_FILE has been archived."
+        STATUS=0
+else
+	echo "Checking for $NOTIFY_FILE within $NOTIFY_LOC... No."
+        STATUS=1
+fi
+
+exit $STATUS
+

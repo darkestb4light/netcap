@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>GroupName</key>
+	<string>wheel</string>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>your-domain.netcap-server</string>
+	<key>Program</key>
+	<string>/path/to/netcap/netcap</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>netcap</string>
+		<string>--monitor</string>
+		<string>--server</string>
+		<string>server-address</string>
+		<string>server-port-number</string>
+		<string>--sort-cache-date</string>
+		<string>--cache-key-dst</string>
+		<string>--log=server</string>
+		<string>--sort-cache-date</string>
+		<string>--notify</string>
+		<string>--Config</string>
+		<string>/path/to/netcap/config-file</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/path/to/netcap/server-stderr-file</string>
+	<key>StandardOutPath</key>
+	<string>/path/to/netcap/server-stdout-file</string>
+	<key>UserName</key>
+	<string>root</string>
+</dict>
+</plist>

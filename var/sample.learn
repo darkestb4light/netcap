@@ -1,0 +1,277 @@
+######################################################################
+#		-- SAMPLE LEARN FILE --
+#Purpose:
+#	This file is to be used as a REFERENCE when building/using a 
+#	netcap "learn" file. You can create another file for netcap to 
+#	use and add your rules. 
+#	
+#	When your ready, just point netcap to it through its configuration 
+#	file or the command line option ("--learn-file"). Alternatively, 
+#	you can use netcap's "learn" mode for netcap to generate it. 
+#	
+#	Please note that the latter method requires capturing traffic 
+#	first (using netcap's capture mode: "--capture"). 
+#	
+#Notes:
+#	This file (sample.learn) should not be used for any reason other 
+#	than to test as indicated in the README.txt file
+#	
+#Netcap Usage:
+#	For information on how to use netcap, see: ./netcap --help
+#
+#Summary Of How Netcap Works:
+#	- Typically netcap is ran in "capture" mode first so that traffic 
+#	can be learned
+#	- To learn traffic, the rules can be entered manually or via 
+#	netcap's "learn" mode
+#	- Once it is believed all authorized traffic has been learned, 
+#	netcap is then started in "monitor" mode
+#	- For "monitor" mode to work, a netcap server and at least one 
+#	client are started (typically in daemon mode)
+#	- In "monitor" mode, the netcap client would listen on an inter-
+#	face and capture traffic
+#	- The captured traffic would be compared against the rules within 
+#	a file similar to this one
+#	- If the traffic is "unauthorized", the client advises a netcap 
+#	server (listening in "monitor" mode as well)
+#	Note: 
+#	If traffic is captured that is not yet "learned" (i.e., it is 
+#	unknown so the client will still notify the server)
+#	- The server will keep track of the unauthorized traffic in memory 
+#	in a couple of different ways (see: ./netcap --help)
+#	- The client will re-read its "learn" file upon receiving a USR1 
+#	signal (should its "learn" file need to be changed while the 
+#	client is already running)
+#	- The server's cache can be dumped on a defined packet interval 
+#	or by sending a USR1 signal to the process
+#	- If notifications are enabled, a notification message containing 
+#	the traffic is outputted by the server
+#	- If logging is enabled, status and traffic can be viewed here as 
+#	well 
+#
+#Learn file format:
+#	Note: 
+#	The below line is broken up for readability ONLY - A rule MUST be 
+#	on a single line
+#
+#	[!];src[/mask]:port|* > dst[/mask]:port|*;[comment];
+#		[Day] Mon  dd hh:mm:ss YYYY;<0|1>
+#
+#Record synopsis:
+#	- Each "field" is delimited by a semicolon (;)
+#	- A commented line must be prefixed with a hash (#)
+#	- Field 1 must be blank (authorized) or contain a "!" 
+#	(unauthorized)
+#	- Field 2 must be one of the following formats: 
+#	Note: 
+#	 o A port notation of "*" means any port
+#	 o Field 5 should NOT be set (i.e., 0) for formats A-D below
+#	 o Field 5 MUST be set (i.e., 1) for any combinations of E below:
+#		A) Single source IP/port (or any port) to single 
+#		destination IP/port (or any port)
+#		
+#	source_IP_address:port|* > destination_IP_address:port|*
+#
+#		B) Single source IP/port (or any port) to multiple 
+#		destination IP/port (or any port) where "/mask" is a 
+#		valid CIDR mask. You may use netcap's "--get-cidr" or 
+#		"--get-range" to assist. See ./netcap --help for more 
+#		information.
+# 
+#	source_IP_address:port|* > destination_IP_address/mask:port|*
+#
+#		C) Multiple source IPs/port (or any port) to single 
+#		destination IP/port (or any port) where "/mask" is a 
+#		valid CIDR mask. You may use netcap's "--get-cidr" or 
+#		"--get-range" to assist. See ./netcap --help for more 
+#		information.
+#
+#	source_IP_address/mask:port|* > destination_IP_address:port|*
+#
+#		D) Multiple source IP/port (or any port) to multiple 
+#		destination IP/port (or any port) where "/mask" is a 
+#		valid CIDR mask. You may use netcap's "--get-cidr" or 
+#		"--get-range" to assist. See ./netcap --help for more 
+#		information.
+# 
+#	source_IP_address/mask:port|* > destination_IP_address/mask:port|*
+#	
+#		E) Same combinations as A-D above but a user may choose 
+#		to use a regular expression to define the source and/or 
+#		destination. See "Additional Record Notes" and "Record 
+#		Examples".
+#	- Field 3 must be blank or may contain an optional user comment
+#	- Field 4 must contain a date in the format listed above
+#	- Field 5 must contain a zero (0) or a one (1) indicating if 
+#	- Field 2 should be matched against captures using a regular 
+#	expression
+#
+#Additional Record Notes:
+#	- Records must be terminated by a newline
+#	- If the regex field (Field 5) is set (i.e., 1):
+#		A) Field 2 is minimally sanitized
+#		B) CIDR notations can only contain regular expressions 
+#		as part of their ports
+#		C) Standard IP formats can contain full regular express-
+#		ions. You can simulate a CIDR block such as:
+#
+#	192.168.0.0/24 as 192.168.0\.\d{1,3} or 172.21.0.0/16 as 172.21\..*
+#
+#		D) The following alpha characters are not allowed within 
+#		the regular expression: a, c, e-z
+#
+#Record Examples:
+#	Note: 
+#	The below lines may broken up for readability ONLY - A rule MUST 
+#	be on a single line
+#
+#	!;192.168.0.10:* > 192.168.0.50:22;No SSH;Jun  2 16:20:05 2010;0
+#
+#	;172.16.0.0/12:* > 0.0.0.0/0:80;HTTP OK;Wed Jun  2 16:20:05 2010;0
+#
+#	!;172.21.107.(34|82)\b:\d{1,5} > 172.2[12].*.(2|10)\b:22;No SSH;
+#		Mon Jun 14 16:26:55 2010;1
+#
+#	;172.21.100.*:\d{1,5} > 172.2[12].*.(2|10)\b:13[789];NetBIOS;
+#		Mon Jun 14 16:26:55 2010;1
+#
+#	;192.168.0.0/16:\d{1,5} > 172.2[12].*.(2|10)\b:13[789];NetBIOS;
+#		Jun 14 16:30:00 2010;1
+#
+#Warnings:
+#	A) One caveat is the following entry (assume a user manually 
+#	entered the following):
+#
+#	;172.21.107.34:* > 0.0.0.0/0:80;HTTP;Sun Jun  6 15:31:31 2010;0
+#	;0.0.0.0:80 > 172.21.107.34:*;HTTP;Sun Jun  6 15:31:31 2010;0
+#	
+#	Notice the entry: 0.0.0.0:80 is probably not what was intended. 
+#	However, because 0.0.0.0:80 is valid for an IP/port format, it 
+#	is accepted. Now, if say the following packet is captured:
+#
+#	74.125.0.32:80 > 172.21.107.34:64540
+#
+#	It is believed to not be learned since there is no rule advising 
+#	otherwise. The solution is to pay attention and make sure the 
+#	rules reflect what is INTENDED to learn:
+#	...
+#	;0.0.0.0/0:80 > 172.21.107.34:*;HTTP;Sun Jun  6 15:31:31 2010;0
+#
+#	Now, 74.125.0.32:80 > 172.21.107.34:64540 would match as intended 
+#	(since 74.125.0.32 falls within CIDR of 0.0.0.0/0).
+#
+#	B) Care should be taken when creating rules that require matching 
+#	against a regular expression. They can be expensive in performance.
+# 
+#	So why use them? One strength is if you want to minimize the 
+#	number of rules created. For example, if you want to filter 
+#	several IPs across multiple subnets or a range of IPs, it can be 
+#	difficult using CIDR notation. However, it can be very easy using 
+#	a regular expression.
+#
+#	C) The "learn" file was designed to be treated similar to a fire-
+#	wall where your more restrictive rules go before your less re-
+#	strictive rules. As netcap parses the "learn" file, it looks for 
+#	a match based on the captured traffic. Once it finds one, it 
+#	stops checking subsequent rules in the "learn" file. This is why 
+#	it is important that the rules are properly ordered
+#	
+#	D) If traffic is captured that does not match a defined rule, 
+#	netcap assumes the traffic is "unknown" and will advise. This 
+#	is so that a user can be informed that there is traffic occurring 
+#	they may be unaware of. At that time, the user can update their 
+#	"learn" file. Please note, this is mainly relevant when running 
+#	in "monitor" mode. See "Summary Of How Netcap Works" or 
+#	./netcap --help for more information.
+######################################################################
+
+#
+#	************************************************
+#				SAMPLE RULES: 
+#		DO NOT USE THIS SECTION FOR TESTING NETCAP 
+#		FUNCTIONALITY - IT IS USED AS AN EXAMPLE 
+#		REFERENCE ONLY AND SHOULD NOT BE MODIFIED
+#	************************************************
+#
+#	The below rules will test:
+#	1. Traffic from unauthorized hosts (172.21.7.103, 172.21.7.200, 
+#	172.22.7.103, and 172.22.7.200) on any source port to un-
+#	authorized server (172.21.105.65) on specified ports that are 
+#	unauthorized (1-25,53,69,80-89,8080-8999,161,162,443, or 445)
+#	2. Reverse of #1 above
+#	3. All other traffic is okay (0.0.0.0/0:* is any IP address on 
+#	any port)
+#
+#	An example of the above implementation follows below:
+#	(They are commented as they are intended for illustration only)
+#
+#!;172.2[12].7.(103|200):* > 172.21.105.65:([1-9]|1[0-9]|2[0-5]|53|69|8[0-9](8[0-9])?|16[12]|44[35])\b;Test communication;Tue Aug 03 12:05:40 2010;1
+#!;172.21.105.65:([1-9]|1[0-9]|2[0-5]|53|69|8[0-9](8[0-9])?|16[12]|44[35])\b > 172.2[12].7.(103|200):*;Test communication;Tue Aug 03 12:05:40 2010;1
+#;0.0.0.0/0:* > 0.0.0.0/0:*;Okay traffic;Tue Aug 03 12:05:40 2010;0
+#
+#	************************************************
+#				USE THIS SECTION 
+#				FOR TESTING NETCAP 
+#				FUNCTIONALITY
+#	************************************************
+#
+#	Note: 
+#	If you just want to test one direction for traffic, only modify 
+#	the appropriate rule and leave the other commented for steps 
+#	1 or 2 below.
+#
+#	1. Replace IPv4-src_addr with IP address where traffic will orig-
+#	nate from for this test. 
+#	Note: For this test, this could be the servers(s) where the 
+#	netcap client is running
+#	2. Replace IPv4-dst_addr with IP address where traffic will be 
+#	directed to.
+#	Note: For this test, this could be the server where the netcap 
+#	server is running
+#	3. Uncomment by removing the hash (#) at the beginning of the 
+#	lines you modified in steps 1 and 2 above
+#	4. Log into any of the source hosts (as specified for "IPv4-src_addr")
+#	5. Generate traffic to the destination server (as specified for 
+#	"IPv4-dst_addr") by doing any of the following:
+#		- nmap -A -T4 -p<unauth-port,...> <IPv4-dst_addr>
+#		- telnet <IPv4-dst_addr> <unauth-port>
+#
+#	Note: 
+#	Where <IPv4-dst_addr> is the destination server specified in 
+#	step 2 above and <unauth-port> is an unauthorized port to send 
+# 	traffic to
+#
+#	The below rules will test:
+#	1. Traffic originating from "IPv4-src_addr" on any port to 
+#	"IPv4-dst_addr" on ports: 1-25,53,69,80-89,8080-8999,161,162,443, 
+#	or 445 is not authorized (as indicated by "!") - Please note this 
+#	is only to test that the communications are working from the 
+#	netcap client(s) to the netcap server. In the real world, these 
+#	ports may be completely fine.
+#	2. Reverse of #1 above (response traffic) is not authorized (as 
+#	indicated by "!")
+#	3. All other traffic is okay and ignored (no presence of "!")
+#	Note:
+#	- If you keep the this rule, it should be the last rule in your 
+#	"learn" file. This is a "catch all" rule as you may want to 
+#	define what is unauthorized and then allow all other traffic to 
+#	be authorized. This helps avoid having to literally learn all 
+#	possible traffic. See "Warnings" section for more information.
+#
+#	- You do not have to define a reverse for each rule. This is done 
+#	so regardless of the packet origin when netcap is capturing, you 
+#	can respond. Generally, multiple packets will traverse from a 
+#	source to a destination. So, if you just define the source/
+#	destination, you have a very high chance of seeing the traffic. 
+#
+#	Remember, netcap does NOT prevent the traffic from occurring, it 
+#	just attempts to alert based on defined rules.
+#	
+#	************************************************ 
+#	MODIFY THE BELOW COMMENTED LINES TO TEST NETCAP. 
+#	SEE NOTES ABOVE FOR HOW TO REPLACE "IPv4-src_addr" 
+#	AND "IPv4-dst_addr" in this section above.
+#	************************************************
+#!;IPv4-src_addr:* > IPv4-dst_addr:([1-9]|1[0-9]|2[0-5]|53|69|8[0-9](8[0-9])?|16[12]|44[35])\b;Test communication from source;Tue Aug 03 12:05:40 2010;1
+#!;IPv4-dst_addr:([1-9]|1[0-9]|2[0-5]|53|69|8[0-9](8[0-9])?|16[12]|44[35])\b > IPv4-src_addr:*;Test communication to source;Tue Aug 03 12:05:40 2010;1
+;0.0.0.0/0:* > 0.0.0.0/0:*;Any traffic matching this rule is okay;Tue Aug 03 12:05:40 2010;0
