@@ -17,3 +17,5 @@ purpose is the following:
 It does NOT (currently) prevent traffic from occurring on the network. It 
 is simply designed to alert when it sees traffic that is configured as 
 unauthorized or unknown.
+
+It is released under the GNU GENERAL PUBLIC LICENSE V3.
