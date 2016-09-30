@@ -3862,7 +3862,7 @@ sub usage
     print STDERR "\t# Suppresses user comments when learning. Useful to use with:\n";
     print STDERR "\t# --learn\n\n"; 
     print STDERR "-nr, --no-reverse\n";
-    print STDERR "\t# Do not create rules for inverse traffic when learning. Usefule\n";
+    print STDERR "\t# Do not create rules for inverse traffic when learning. Useful\n";
     print STDERR "\t# to use with:\n";
     print STDERR "\t# --learn\n\n";
     print STDERR "-re, --regex <expression [,...]>\n";
