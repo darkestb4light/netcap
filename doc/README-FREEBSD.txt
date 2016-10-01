@@ -59,8 +59,8 @@ mode (i.e., remove --promiscuous).
 the client to filter for certain captured traffic (i.e., see --regex 
 option).
 
-To: What is required to start the client. This script starts the client with the most common options. The minimum arguments/options that MUST be 
-changed are: 
+To: What is required to start the client. This script starts the client with the 
+most common options. The minimum arguments/options that MUST be changed are: 
 	- <server-address> 
 	- <server-port-number> 
 	- <ethernet-device>
@@ -81,7 +81,8 @@ the following parameters:
 	- Client will start up as a daemon process
 	- Netcap configuration file is located: /usr/local/netcap/etc/
 
-Note: The following line is split on multiple lines ONLY for because of readability - When modified, it MUST be on one line:
+Note: The following line is split on multiple lines ONLY for readability. When modified, 
+it MUST be on one line:
 
 	command_args="--monitor --client 
 			foobar 10000 
@@ -133,8 +134,8 @@ example, you may not wish for server to notify (i.e., remove --notify)
 the server to dump its cache after capturing a certain number of packets 
 (i.e., see --packet-count option).
 
-To: What is required to start the server. This script starts the client with the most common options. The minimum arguments/options that MUST be 
-changed are: 
+To: What is required to start the server. This script starts the client with the most 
+common options. The minimum arguments/options that MUST be changed are: 
 	- <server-address> 
 	- <server-port-number> 
 	- </path/to/netcap-config/netcap.config>
@@ -153,7 +154,8 @@ the following parameters:
 	- Server will start as a daemon process
 	- Netcap configuration file is located: /usr/local/netcap/etc/
 
-Note: The following line is split on multiple lines ONLY for because of readability - When modified, it MUST be on one line:
+Note: The following line is split on multiple lines ONLY for readability. When modified, 
+it MUST be on one line:
 
 	command_args="--monitor --server 
 			foobar 10000
