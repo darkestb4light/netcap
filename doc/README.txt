@@ -27,8 +27,8 @@ with payload at this point in time). This was ideal for security purposes
 as it could give visibility into traffic that was occurring across the 
 network without us having to constantly watch the wire. For example, how 
 would one know they were being port scanned or someone was attempting to 
-connect to a listening port? They would need to be watching logs (assuming traffic was being logged) or watching the appropriate interface wire 
-constantly.
+connect to a listening port? They would need to be watching logs (assuming 
+traffic was being logged) or watching the appropriate interface wire constantly.
 
 The proof of concept had the following minimum requirements:
 1. Be capable of gathering packets from the wire
@@ -38,24 +38,29 @@ or unacceptable
 
 At first, I was not sure of how useful it would be due to other popular 
 packet sniffers (tcpdump, wireshark). After all, these tools are fully 
-capable of capturing traffic and could easily meet requirement #1 above. However, requirement #2 and requirement #3 would take more effort, beyond 
+capable of capturing traffic and could easily meet requirement #1 above. 
+However, requirement #2 and requirement #3 would take more effort, beyond 
 the default capabilities. One could use a default sniffer to capture the 
 packets and write them to a file. Now, something would need to parse the 
 binary data, interpret it so it could be analyzed, and then create something 
-that could make conduct further monitoring and analysis against this dataset. These last two gaps caused me to reconsider proceeding with the idea. The  
-approach also has to be able to inform of this type of activity in near real time. To do this with other tools would be complicated if not impossible 
+that could make conduct further monitoring and analysis against this dataset. 
+These last two gaps caused me to reconsider proceeding with the idea. The 
+approach also has to be able to inform of this type of activity in near real 
+time. To do this with other tools would be complicated if not impossible 
 without writing something anyway.
 
 The strength netcap would have over other tools is its ability to create 
 rules, based on host to host communication, and define what is either 
-authorized or unauthorized. It would also be able to monitor traffic against 
-these rules. It only made sense to have the same program capture and tie it 
-all together. 
+authorized or unauthorized. It would also be able to monitor traffic 
+against these rules. It only made sense to have the same program capture 
+and tie it all together. 
 
 Being skeptical, I decided to write netcap in PERL. This way I could get 
 it out quick as a proof of concept. 
 
-It has proven to be useful as it provides real time notifications of host to host traffic across our local network. It allows us to respond quickly to host traffic that is unauthorized or unknown on the network. 
+It has proven to be useful as it provides real time notifications of host 
+to host traffic across our local network. It allows us to respond quickly 
+to host traffic that is unauthorized or unknown on the network. 
 
 I may port it to C at some point in the future depending on the necessity.
 
@@ -74,7 +79,8 @@ purpose is the following:
 "normal" (i.e., unauthorized or unknown).
 
 It does NOT (currently) prevent traffic from occurring on the network. It 
-is simply designed to alert when it sees traffic that is configured as unauthorized or unknown.
+is simply designed to alert when it sees traffic that is configured as 
+unauthorized or unknown.
 
 ===========================================================================
 
@@ -129,7 +135,8 @@ Once netcap has captured the desired number of packets, it will write
 the data to its capture file (netcap.cap by default). The capture file 
 is written to netcap's working directory by default (unless --capture-file 
 is used). An interrupt (pressing 'control + c' or sending via a signal such 
-as SIGINT or SIGTERM) or using --packet-count will cause netcap to stop capturing and exit.
+as SIGINT or SIGTERM) or using --packet-count will cause netcap to stop 
+capturing and exit.
 
 You can also choose to specify a packet limit by passing it --packet-count 
 and a maximum number of packets to capture. When this limit is reached, 
@@ -159,8 +166,8 @@ netcap (pid: 45036) continuing with capturing traffic.
 192.168.0.36:62190 > 192.168.0.1:53
 ...
 
-If there are more packets to capture from --packet-count or you omitted the 
-option, netcap will go back to listening for packets.
+If there are more packets to capture from --packet-count or you omitted 
+the option, netcap will go back to listening for packets.
 
 Useful commands/options when capturing are:
 
@@ -178,14 +185,14 @@ Useful commands/options when capturing are:
 
 A sample of capturing with netcap might look like the following:
 
-Example: Capture using the default interface indefinitely and place all 
-packets to the default capture file: netcap.cap
+Example: Capture using the default interface indefinitely and place 
+all packets to the default capture file: netcap.cap
 
 netcap --capture
 
 Example: Capture 100000 packets on interface en0, only store those that 
-are unique to /tmp/capture.txt, and echo them to stdout as well so the user 
-can see what's happening
+are unique to /tmp/capture.txt, and echo them to stdout as well so the 
+user can see what's happening
 
 netcap --capture -pc 100000 -u -i en0 -cf /tmp/capture.txt -s
 
@@ -196,7 +203,8 @@ traffic on an interface.
 layer 4 (TCP/UDP) packets are captured currently.
 - You can't watch the packets as they enter the file (such as using 
 "tail -f") because netcap keeps the file descriptor open while it is writing 
-the data. A interrupt can be sent to force the closure earlier at the user's convenience.
+the data. A interrupt can be sent to force the closure earlier at the user's 
+convenience.
 - See netcap --help for more information for capture mode options.
 
 B. Learn Mode
@@ -275,7 +283,8 @@ Useful commands/options when learning are:
 Learning traffic in the hundreds or thousands (even with filtering options) 
 can be daunting. It can be helpful to group the traffic first. For example: 
 To filter destination ports (ascending order) and categorize then before 
-learning, you can open a terminal and run the following against your capture file:
+learning, you can open a terminal and run the following against your capture 
+file:
 
 $ cat <path/to/capture-file> | perl -ne '/>\s.*:(.*?)$/ && print "$1\n"' | \
 sort | uniq -c | sort -n
@@ -284,22 +293,26 @@ Then, you can determine what the majority of the traffic is and decide if
 it should be authorized/unauthorized or if it can be skipped/reviewed for 
 later.
 
-A fast way to remove ephemeral traffic is to enter learn mode and choose to review the traffic later (by saving it to a file). When presented with the option to create a filter, answer yes and enter the following filter:
+A fast way to remove ephemeral traffic is to enter learn mode and choose to 
+review the traffic later (by saving it to a file). When presented with the 
+option to create a filter, answer yes and enter the following filter:
 
 .*\s>\s.*:\d{5}
 
 The above will filter traffic where the destination is likely an ephemeral 
 port (such as through a reply to the source in a conversation). In this way, 
-you can filter this traffic out of the capture file and deal with the traffic separately or discard it altogether.
+you can filter this traffic out of the capture file and deal with the traffic 
+separately or discard it altogether.
 
 netcap processes the learned rules like a firewall. This means as traffic 
 is captured, it is compared against each rule, from top to bottom, until 
 a match is found or until the end of the file. If no match is found, netcap 
-treats the traffic as "unknown" and treats it in the same manner as it 
-would for unauthorized traffic. This can create some false positives 
-because as new traffic is introduced, you will need to learn this new 
-traffic. If you ignore it and do not account for it through a rule (even setting it as authorized), netcap will continue notifications to the server (when in monitor mode). A solution would be to add the following rule to the end 
-of the learned file you are using:
+treats the traffic as "unknown" and treats it in the same manner as it would 
+for unauthorized traffic. This can create some false positives because as new 
+traffic is introduced, you will need to learn this new traffic. If you ignore it 
+and do not account for it through a rule (even setting it as authorized), netcap 
+will continue notifications to the server (when in monitor mode). A solution 
+would be to add the following rule to the end of the learned file you are using:
 
 ;0.0.0.0/0:* > 0.0.0.0/0:*;Remaining Traffic OK;Tue Aug 03 12:05:40 2010;0
 
@@ -317,9 +330,10 @@ could miss traffic that does not match any unauthorized traffic above
 it. It is not advised to add this rule as authorized until you are sure 
 your set for your environment. If you know what you wish to watch for, 
 then it is less of a concern. For example, if you want to see if any 
-services such as ftp, tftp, telnet, etc., are being used, you can watch for these services and then feel confident adding the rule. Alternatively, just 
-set the rule to unauthorized and you should quickly see if anything is awry. 
-For example:
+services such as ftp, tftp, telnet, etc., are being used, you can watch 
+for these services and then feel confident adding the rule. Alternatively, 
+just set the rule to unauthorized and you should quickly see if anything is 
+awry. For example:
 
 # watch for FTP, TELNET, and TFTP
 !;0.0.0.0/0:* > 0.0.0.0/0:(2[013]|69)\b;...;1
@@ -335,7 +349,8 @@ user will have an option to see the rule it matches (to ensure it is
 what they intended) or skip to the first packet that is unlearned.
 - You MUST capture in order to use netcap's learn mode but you do not 
 have to have a learn file to monitor. You will be warned when starting 
-a netcap client, however. This warning is presented to advise you that the netcap client will treat all unlearned traffic as "unknown" and will advise 
+a netcap client, however. This warning is presented to advise you that the 
+netcap client will treat all unlearned traffic as "unknown" and will advise 
 the netcap server. This could flood your server (and you) with notifications. 
 Proceed at your own risk.
 - For more detailed information on netcap's learn file structure, see the 
@@ -395,8 +410,10 @@ also build a notification message (see: --notify option). This is useful
 for automating the alert process. In lieu of the notification option, 
 one can refer to the server log to see incoming client messages.
 
-The server supports SIGTERNM, SIGINT, and SIGUSR1 signals. You can send the server a SIGTERM or SIGINT signal to stop the server process. If the server  
-is running in the foreground (i.e. you haven't passed it --daemon), you can choose to press "control + c" to stop the netcap server. 
+The server supports SIGTERNM, SIGINT, and SIGUSR1 signals. You can send 
+the server a SIGTERM or SIGINT signal to stop the server process. If the 
+server  is running in the foreground (i.e. you haven't passed it --daemon), 
+you can choose to press "control + c" to stop the netcap server. 
 
 	=============
 	NETCAP CLIENT
@@ -518,16 +535,19 @@ INSTALL.txt if necessary.
 ./netcap --help
 
 Expected output: 
-	The netcap help menu is outputted to stderr
+	- The netcap help menu is outputted to stderr
 Unexpected output: 
-	See INSTALL.txt
+	- See INSTALL.txt
 
 2. Test capture mode (elevated privileges may be required)
+** Split on multiple lines for readability 
 
-./netcap --interface <device> --capture --packet-count 10 --unique --stdout --capture-file </path/to/capture-file>
+./netcap --interface <device> --capture --packet-count 10 --unique --stdout \
+--capture-file </path/to/capture-file>
 
 Expected output: 
-	Captured packets outputted to stdout as well as configured capture location
+	- Captured packets outputted to stdout as well as configured capture 
+	location
 Unexpected output: 
 	- Make sure you are root before capturing traffic
 	- Make sure a valid device is defined for the netcap --interface 
@@ -537,13 +557,15 @@ Unexpected output:
 	can use a tool like "tcpdump", nmap, or "nc" to test)
 
 3. Test learn mode 
+** Split on multiple lines for readability 
 
-./netcap --learn --capture-file </path/to/capture-file> --learn-file </path/to/learn-file>
+./netcap --learn --capture-file </path/to/capture-file> --learn-file \
+</path/to/learn-file>
 
 Expected output: 
-	Traffic should be read from the configured locations for captured 
-	traffic and learned data should be written to the configured 
-	location for learned traffic
+	- Traffic should be read from the configured locations for 
+	captured traffic and learned data should be written to the 
+	configured location for learned traffic
 Unexpected output: 
 	- Did you capture traffic first? If not, this must be done so 
 	netcap knows what traffic to learn (see step 2)
@@ -576,35 +598,42 @@ are running - This keeps traffic scoped for the test
 - A good destination for the test could be the server where the netcap 
 server is running - This keeps traffic scoped for the test
 - netcap "sample.learn" file should only be used for testing and not 
-modified for "production" use. This is because it should be kept as a reference as it contains other documentation.
+modified for "production" use. This is because it should be kept as a reference 
+as it contains other documentation.
 
 5. Test monitor mode: 
 
 5a. Start server (NON daemon)
+** Split on multiple lines for readability 
 
-./netcap --monitor --server <host> <port> --notify out=<path/to/notify-file> --cache-file </path/to/cache-file> --cache-key-dst --log=server </path/to/server-log-file> --stdout --packet-count 10
+./netcap --monitor --server <host> <port> --notify out=<path/to/notify-file> \
+--cache-file </path/to/cache-file> --cache-key-dst --log=server \
+</path/to/server-log-file> --stdout --packet-count 10
 
 Expected output: 
-	netcap should start listening on <host> and <port> and display information 
-	to stdout
-	Log files should be created in their configured locations as provided 
+	- netcap should start listening on <host> and <port> and display 
+	information to stdout
+	- Log files should be created in their configured locations as provided 
 	above
-	The server should dump the cache and create a notification file (as 
+	- The server should dump the cache and create a notification file (as 
 	specified above) after 10 unique packets
 Unexpected output:
 	- Make sure host and port are correct
 	- You will not receive alerts until you proceed with 5b 
 
 5b. Start client (NON daemon)
+** Split on multiple lines for readability 
 
-./netcap --monitor --client <host> <port> --interface <device> --promiscuous --learn-file </path/to/learn-file> --log=client out=<path/to/client-log-file> --packet-count 1000 --unique --stdout
+./netcap --monitor --client <host> <port> --interface <device> --promiscuous \
+--learn-file </path/to/learn-file> --log=client out=<path/to/client-log-file> \
+--packet-count 1000 --unique --stdout
 
 Expected output: 
-	netcap should start listening on <host> and <port> and display information 
-	to stdout
-	Log files should be created in their configured locations as provided 
-	above
-	The client should cleanly exit after 1000 unique packets
+	- netcap should start listening on <host> and <port> and display 
+	information to stdout
+	- Log files should be created in their configured locations as 
+	provided above
+	- The client should cleanly exit after 1000 unique packets
 Unexpected output:
 	- Make sure you are root before monitoring as a client
 	- Make sure <host> and <port> are valid
@@ -621,8 +650,11 @@ Unexpected output:
 the below commands:
 
 Server:
+** Split on multiple lines for readability 
 
-./netcap --monitor --server <host> <port> --notify out=<path/to/notify-file> --cache-file </path/to/cache-file> --cache-key-dst --log=server </path/to/server-log-file> --packet-count <count> --daemon
+./netcap --monitor --server <host> <port> --notify out=<path/to/notify-file> \
+--cache-file </path/to/cache-file> --cache-key-dst --log=server \
+</path/to/server-log-file> --packet-count <count> --daemon
 
 ** NOTE: If you are not sure what count to use, keep what you tested with in 
 step 5a or omit the option. You can always send a SIGUSR1 to dump the cache 
@@ -632,8 +664,11 @@ the running processes to find it
 ** NOTE: You can tail the server log to keep status on the various ongoings
 
 Client:
+** Split on multiple lines for readability 
 
-./netcap --monitor --client <host> <port> --interface <device> --promiscuous --learn-file </path/to/learn-file> --log=client out=<path/to/client-log-file> --packet-count 1000 --unique --daemon
+./netcap --monitor --client <host> <port> --interface <device> --promiscuous \
+--learn-file </path/to/learn-file> --log=client out=<path/to/client-log-file> \
+--packet-count 1000 --unique --daemon
 
 ** NOTE: If you are not sure what count to use, keep what you tested with in 
 step 5b or omit the option. You can always send a SIGUSR1 to refresh the 
@@ -647,8 +682,9 @@ the running processes to find it
 
 Once server and client are running, generate some traffic. 
 
-Use the learn file you created or the rules you modified in the default "sample.learn" file. Generate traffic to the destinations/ports you 
-defined as unauthorized. Example:
+Use the learn file you created or the rules you modified in the default 
+"sample.learn" file. Generate traffic to the destinations/ports you defined 
+as unauthorized. Example:
 
 You could port scan the server host 
 
@@ -659,9 +695,9 @@ Or, telnet to some unauthorized ports
 telnet <IPv4-dst_addr> <unauth-port>
 
 Expected output: 
-	Should see data in client / server logs
-	Should see the server dump its cache and generate a notification
-	Should see the client stop (after <count> packets, if you specified the 
+	- Should see data in client / server logs
+	- Should see the server dump its cache and generate a notification
+	- Should see the client stop (after <count> packets, if you specified the 
 	option)
 Unexpected output:
 	- Make sure host and port are correct
