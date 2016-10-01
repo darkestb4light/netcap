@@ -53,7 +53,8 @@ Key: "ProgramArguments"
 Array String: "server-address"
 
 What to do: Replace "server-address" with the IP address of the 
-listening server host or the hostname. For example if the server is running on your local network as "foobar" (192.168.0.20), then set the string as:
+listening server host or the hostname. For example if the server is running 
+on your local network as "foobar" (192.168.0.20), then set the string as:
 
 	Host: foobar
 	-or-
@@ -91,14 +92,15 @@ To determine what interfaces may be captured, run:
 
 # ./netcap --list-interfaces 
 
-If you do not get any interface output, make sure you are running the command with root privileges (e.g., sudo). The first device in the list is 
-the default that netcap will use if "--interface" is not used. If the 
-default device is valid to capture from, you can remove the "--interface" 
-and the "ethernet-device" string references from the plist file as netcap 
-will capture from the default device so the "--interface" option is not 
-needed.
+If you do not get any interface output, make sure you are running the command 
+with root privileges (e.g., sudo). The first device in the list is the default 
+that netcap will use if "--interface" is not used. If the default device is valid 
+to capture from, you can remove the "--interface" and the "ethernet-device" string 
+references from the plist file as netcap will capture from the default device so 
+the "--interface" option is not needed.
 
-You can also run the following standard *nix command to get a list of devices (Note: you may need to have root privileges): 
+You can also run the following standard *nix command to get a list of devices (Note: 
+you may need to have root privileges): 
 
 # ifconfig
 
@@ -106,9 +108,9 @@ F.
 Key: "ProgramArguments" 
 Array String: "/path/to/netcap-config/netcap.config"
 
-What to do: Replace "/path/to/netcap-config/" with the absolute path to where netcap's configuration file is located. For example, if netcap's 
-configuration file is located in "/Users/foobar/netcap/etc/", then set the 
-string as: 
+What to do: Replace "/path/to/netcap-config/" with the absolute path to where netcap's 
+configuration file is located. For example, if netcap's configuration file is located 
+in "/Users/foobar/netcap/etc/", then set the string as: 
 	
 	/Users/foobar/netcap/etc/netcap.config
 
@@ -129,9 +131,10 @@ Key: "StandardOutPath"
 String: "/path/to/netcap-stdout-file/netcap-client.stdout"
 
 What to do: Replace "/path/to/netcap-stdout-file/" with the absolute path 
-to where launchd should direct netcap's standard output stream. For example, if you want launchd to redirect all of netcap's standard output 
-stream to "/Users/foobar/netcap/var/log/" and place it in the file 
-"netcap-client.stdout", then set the string as: 
+to where launchd should direct netcap's standard output stream. For example, 
+if you want launchd to redirect all of netcap's standard output stream to 
+"/Users/foobar/netcap/var/log/" and place it in the file "netcap-client.stdout", 
+then set the string as: 
 	
 	/Users/foobar/netcap/var/log/netcap-client.stdout
 
@@ -165,8 +168,9 @@ C.
 Key: "ProgramArguments" 
 Array String: "server-address"
 
-What to do: Replace "server-address" with the IP address of the 
-listening server host or the hostname. For example if the server is running on your local network as "foobar" (192.168.0.20), then set the string as:
+What to do: Replace "server-address" with the IP address of the listening 
+server host or the hostname. For example if the server is running on 
+your local network as "foobar" (192.168.0.20), then set the string as:
 
 	Host: foobar
 	-or-
@@ -218,8 +222,9 @@ String: "/path/to/netcap-stdout-file/netcap-server.stdout"
 
 What to do: Replace "/path/to/netcap-stdout-file/" with the absolute path 
 to where launchd should direct netcap's standard output stream. For 
-example, if you want launchd to redirect all of netcap's standard output stream to "/Users/foobar/netcap/var/log/" and place it in the file 
-"netcap-server.stdout", then set the string as: 
+example, if you want launchd to redirect all of netcap's standard output stream to 
+"/Users/foobar/netcap/var/log/" and place it in the file "netcap-server.stdout", 
+then set the string as: 
 	
 	/Users/foobar/netcap/var/log/netcap-server.stdout
 
