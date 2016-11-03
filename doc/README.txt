@@ -58,9 +58,9 @@ and tie it all together.
 Being skeptical, I decided to write netcap in PERL. This way I could get 
 it out quick as a proof of concept. 
 
-It has proven to be useful as it provides real time notifications of host 
-to host traffic across our local network. It allows us to respond quickly 
-to host traffic that is unauthorized or unknown on the network. 
+It had proven to be useful as it provided real time notifications of host 
+to host traffic across various networks. It allowed us to respond quickly 
+to host traffic that was unauthorized or unknown on the network.
 
 I may port it to C at some point in the future depending on the necessity.
 
@@ -81,6 +81,13 @@ purpose is the following:
 It does NOT (currently) prevent traffic from occurring on the network. It 
 is simply designed to alert when it sees traffic that is configured as 
 unauthorized or unknown.
+
+In an optimal setup, the client should be installed on servers where it can 
+see network traffic. This would be similar to how one would setup an IDS. 
+The main purpose is so it can passively sniff traffic and compare this 
+against what is known to be authorized/unauthorized. The server can be 
+placed anywhere as long as the client can communicate with it over the UDP 
+socket.
 
 ===========================================================================
 
@@ -110,7 +117,7 @@ on Windows platforms.
 	=======================
 
 This section documents the modes for netcap. For more information, see 
-./netcap --help.
+netcap --help.
 
 Netcap has to know what traffic is authorized/unauthorized in order to 
 monitor effectively and be useful. In order for netcap to know this 
@@ -186,13 +193,15 @@ Useful commands/options when capturing are:
 A sample of capturing with netcap might look like the following:
 
 Example: Capture using the default interface indefinitely and place 
-all packets to the default capture file: netcap.cap
+all packets to the default capture file "netcap.cap" (note: the below 
+example would not display any packets to stdout as --stdout/-s would 
+be needed):
 
 netcap --capture
 
 Example: Capture 100000 packets on interface en0, only store those that 
 are unique to /tmp/capture.txt, and echo them to stdout as well so the 
-user can see what's happening
+user can see what's happening:
 
 netcap --capture -pc 100000 -u -i en0 -cf /tmp/capture.txt -s
 
@@ -202,9 +211,9 @@ traffic on an interface.
 - While netcap does keep track of network packets, only layer 3 (IP) and 
 layer 4 (TCP/UDP) packets are captured currently.
 - You can't watch the packets as they enter the file (such as using 
-"tail -f") because netcap keeps the file descriptor open while it is writing 
-the data. A interrupt can be sent to force the closure earlier at the user's 
-convenience.
+"tail -f") because netcap keeps the data in memory until the packet limit 
+is reached or an interrupt is sent. A interrupt can be sent to force the 
+closure earlier at the user's convenience.
 - See netcap --help for more information for capture mode options.
 
 B. Learn Mode
@@ -218,7 +227,7 @@ With no other options, netcap will look for and read its default capture
 file (netcap.cap). It expects to find the file within its current working 
 directory (unless --capture-file is used). 
 
-netcap will read each packet and present options that the user can interact 
+Netcap will read each packet and present options that the user can interact 
 with. There are several choices that can be made for a given packet:
 
 o Learn as authorized traffic.
@@ -304,7 +313,7 @@ port (such as through a reply to the source in a conversation). In this way,
 you can filter this traffic out of the capture file and deal with the traffic 
 separately or discard it altogether.
 
-netcap processes the learned rules like a firewall. This means as traffic 
+Netcap processes the learned rules like a firewall. This means as traffic 
 is captured, it is compared against each rule, from top to bottom, until 
 a match is found or until the end of the file. If no match is found, netcap 
 treats the traffic as "unknown" and treats it in the same manner as it would 
@@ -328,7 +337,7 @@ IMPORTANT: The above rule should be the LAST rule as it will match ALL
 traffic. Also, take care that since it will match ALL traffic, you 
 could miss traffic that does not match any unauthorized traffic above 
 it. It is not advised to add this rule as authorized until you are sure 
-your set for your environment. If you know what you wish to watch for, 
+you're set for your environment. If you know what you wish to watch for, 
 then it is less of a concern. For example, if you want to see if any 
 services such as ftp, tftp, telnet, etc., are being used, you can watch 
 for these services and then feel confident adding the rule. Alternatively, 
@@ -410,9 +419,9 @@ also build a notification message (see: --notify option). This is useful
 for automating the alert process. In lieu of the notification option, 
 one can refer to the server log to see incoming client messages.
 
-The server supports SIGTERNM, SIGINT, and SIGUSR1 signals. You can send 
+The server supports SIGTERM, SIGINT, and SIGUSR1 signals. You can send 
 the server a SIGTERM or SIGINT signal to stop the server process. If the 
-server  is running in the foreground (i.e. you haven't passed it --daemon), 
+server is running in the foreground (i.e. you haven't passed it --daemon), 
 you can choose to press "control + c" to stop the netcap server. 
 
 	=============
@@ -554,7 +563,7 @@ Unexpected output:
 	option. If in doubt of the available interfaces that can be 
 	captured from, run: sudo ./netcap --list-interfaces
 	- Ensure there is traffic on the interface to capture (you 
-	can use a tool like "tcpdump", nmap, or "nc" to test)
+	can use a tool like "tcpdump", "nmap", or "nc" to test)
 
 3. Test learn mode 
 ** Split on multiple lines for readability 
