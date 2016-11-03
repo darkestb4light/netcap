@@ -680,7 +680,8 @@ sub capture
 	my $total_ip_packets = 0;
 	my $packet_count = 0;
 	my $packet;	
-	my $traffic; 
+	my $traffic;
+	my $tcp_flag; 
 	my %data;
 	my $ucount = ($arg->{do_unique} == 0) ? "Not enabled" : 0;
 	my $packet_max = ($arg->{packet_count} == 0) ? "Indefinite amount" : $arg->{packet_count};
@@ -750,7 +751,7 @@ sub capture
 	for(;;)
 	{
 		get_capture_packet($pcap, \$packet, \$traffic, \$total_net_packets, 
-			\$total_ip_packets, 0);
+			\$total_ip_packets, \$tcp_flag);
 		next if($traffic == 0);
 		if($arg->{do_regex_cap}){
 			$match = 0;
@@ -772,10 +773,11 @@ sub capture
 			last;
 		}else{
 			if($arg->{do_unique}){
-				print "$traffic\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				print "$traffic ($tcp_flag)\n" 
+					if($arg->{do_stdout} && ! exists($data{$traffic}));
 				$data{$traffic}++;
 			}else{
-				print "$traffic\n" if($arg->{do_stdout});
+				print "$traffic ($tcp_flag)\n" if($arg->{do_stdout});
 				$data{$packet_count} = $traffic;
 			}
 		}
