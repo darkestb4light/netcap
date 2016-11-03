@@ -38,8 +38,23 @@
 #		- Time::Local (v. 1.1901)
 #			http://search.cpan.org/~drolsky/Time-Local-1.1901/lib/Time/Local.pm
 #	License:
-#		Released under GNU GENERAL PUBLIC LICENSE version 3 (see "LICENSE.txt" 
-#		which must accompany this code)
+#		Copyright (C) 2010-2016 Ray T. Daley (rcdsox@gmail.com)
+#
+#		This program is free software: you can redistribute it and/or modify
+#		it under the terms of the GNU General Public License as published by
+#		the Free Software Foundation, either version 3 of the License, or
+#		(at your option) any later version.
+#
+#		This program is distributed in the hope that it will be useful,
+#		but WITHOUT ANY WARRANTY; without even the implied warranty of
+#		MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#		GNU General Public License for more details.
+#
+#		You should have received a copy of the GNU General Public License
+#		along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#		Netcap is released under GNU GENERAL PUBLIC LICENSE version 3 (see 
+#		"doc/LICENSE.txt" which must accompany this code).
 ###############################################################################
 use File::Basename;
 use IO::Socket;
@@ -3723,7 +3738,12 @@ sub usage
 	my ($arg) = @_;
 	
    	die "Invalid input (try: -h or --help).\n" unless($ARGV[0] =~ m/^(\-h|--help)\b/);
-   	print STDERR "Usage:\n";
+   	print STDERR "\n$arg->{name} copyright (C) 2010-2016 Ray T. Daley (rcdsox@gmail.com)\n\n";
+    print STDERR "This program is free software: you can redistribute it and/or modify\n";
+    print STDERR "it under the terms of the GNU General Public License as published by\n";
+    print STDERR "the Free Software Foundation, either version 3 of the License, or\n";
+    print STDERR "(at your option) any later version. See \"LICENSE.txt\" or if missing:\n";
+    print STDERR "http://www.gnu.org/licenses/.\n\n";
    	print STDERR "\t$arg->{name} <command> [option ...]\n";
    	print STDERR "\t$arg->{name} [option ...] <command>\n";
    	
