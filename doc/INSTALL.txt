@@ -39,15 +39,26 @@ Note: Within netcap-<version>.tar.gz, the following structure exists:
 	nc-stop-server		<-- Server script to automate stopping
 	netcap			<-- Main program
 - dependencies/
-	/io-socket/IO-1.25.tar.gz
-	/mime-lite/MIME-Lite-3.021.tar.gz
-	/net-cidr/Net-CIDR-0.11.tar.gz
-	/net-packet/NetPacket-v0.42.0.tar.gz
-	/net-pcap/Net-Pcap-0.16.tar.gz
-	/net-smtp/libnet-1.22.tar.gz
-	/time-local/Time-Local-1.1901.tar.gz
+	/io-socket/
+		IO-1.25.tar.gz
+	/mime-lite/
+		MIME-Lite-3.021.tar.gz
+		MIME-Lite-3.030.tar.gz
+	/net-cidr/
+		Net-CIDR-0.11.tar.gz
+	/net-packet/
+		NetPacket-v0.42.0.tar.gz
+		NetPacket-1.6.0.tar.gz
+	/net-pcap/
+		Net-Pcap-0.16.tar.gz
+		Net-Pcap-0.18.tar.gz
+	/net-smtp/
+		libnet-1.22.tar.gz
+	/time-local/
+		Time-Local-1.1901.tar.gz
 - doc/
 	INSTALL.txt		<-- Installation guide
+	LICENSE.txt		<-- License file for this project
 	netcap.md5		<-- Contains this version's MD5 hash
 	README-FREEBSD.txt	<-- Guide for starting netcap at boot (FREEBSD)
 	README-OSX.txt		<-- Guide for starting netcap at boot (OSX)
