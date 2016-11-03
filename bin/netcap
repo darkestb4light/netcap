@@ -3450,6 +3450,7 @@ sub update_cache
 					$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
 					$packet_data->{$dst}->{$src}{edt} = $cache_line[3];
 					$packet_data->{$dst}->{$src}{record_id} = $cache_line[4];
+					$packet_data->{$dst}->{$src}{status} = "Old";
 				}else{
 					if(! exists($packet_data->{$dst}->{$src})){
 						$packet_data->{$dst}->{$src}{key} = $src;
@@ -3458,6 +3459,7 @@ sub update_cache
 						$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
 						$packet_data->{$dst}->{$src}{edt} = $cache_line[3];
 						$packet_data->{$dst}->{$src}{record_id} = $cache_line[4];
+						$packet_data->{$dst}->{$src}{status} = "Old";
 					}else{
 						$packet_data->{$dst}->{$src}{count} += $cache_line[1];
 						$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
@@ -3487,6 +3489,7 @@ sub update_cache
 					$packet_data->{$cache_line[0]}{bdt} = $cache_line[2];
 					$packet_data->{$cache_line[0]}{edt} = $cache_line[3];
 					$packet_data->{$cache_line[0]}{record_id} = $cache_line[4];
+					$packet_data->{$cache_line[0]}{status} = "Old";
 				}else{
 					$packet_data->{$cache_line[0]}{count} += $cache_line[1];
 					$packet_data->{$cache_line[0]}{bdt} = $cache_line[2];
