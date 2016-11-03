@@ -773,8 +773,7 @@ sub capture
 			last;
 		}else{
 			if($arg->{do_unique}){
-				print "$traffic ($tcp_flag)\n" 
-					if($arg->{do_stdout} && ! exists($data{$traffic}));
+				print "$traffic ($tcp_flag)\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
 				$data{$traffic}++;
 			}else{
 				print "$traffic ($tcp_flag)\n" if($arg->{do_stdout});
