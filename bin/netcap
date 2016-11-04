@@ -14,6 +14,7 @@
 # Note:
 #	Usage:
 #		./netcap <command> [option ...]
+#		./netcap [option ...] <command> 
 #	Permissions:
 #		Sufficient permissions (e.g., root) are required for some commands:
 #		-li, --list-interfaces
@@ -496,7 +497,7 @@ sub main
 #
 #	Note:
 #		Only useful for capture, learn, or monitor modes. Any option specified 
-#		on the command-line overwrites the corresponding configuration option.
+#		on the command line overwrites the corresponding configuration option.
 # Post:
 #	Reference filled with option values or dies on error (can't open for read)
 sub read_config
@@ -585,7 +586,7 @@ sub get_default_interface
 #   lookup_cidr_range
 # Pre:
 #	$	= scalar representing if looking up a packet amongst a given CIDR
-#	$	= scalar representing a flag to determine what to do IP range/cidr 
+#	$	= scalar representing a flag to determine what to do IP range/CIDR 
 #		conversion
 #	$	= scalar representing a CIDR block or IP range
 #	\@	= reference to an array holding CIDR blocks to check against a given IP 
@@ -594,7 +595,7 @@ sub get_default_interface
 #		the CIDR array reference: 1 = found; 0 = not found
 # Post:
 #	Depending on lookup packet flag:
-#		lookup of IP is conducted CIDR array reference
+#		lookup of IP or CIDR is conducted
 #	Depending on flag:
 #		1 = given a CIDR block, an IP range is outputted to STDERR
 #		2 = given an IP range, a CIDR block is outputted to STDERR
@@ -655,7 +656,7 @@ sub create_device
 # Pre:
 #	\%	= reference to a hash with at least the following fields:
 #		packet_count 	= holds how many packets to grab before quitting
-#		do_unique 		= 0 don't grab unique packets; 1 grab unique packets
+#		do_unique 		= 0: don't grab unique packets; 1: grab unique packets
 #		cfile 			= the capture file to write the traffic to
 #		name			= the name of the program conducting the capture
 #		interface 		= the interface to create the packet capture descriptor 
@@ -920,7 +921,7 @@ sub write_capture_data
 #
 #	Note:		
 #		This function does NOT subsequently remove the backup file after 
-#		sorting because the user may not want to lose original. If the 
+#		sorting because the user may not want to lose the original. If the 
 #		primary backup file exists and contains data, subsequent backups 
 #		will have the epoch value appended.
 #
@@ -1811,14 +1812,14 @@ sub load_captured_packets
 #	correctly. See learn().
 #
 #	Note:
-#		This functions as a dependent of learn(). This is a menu option and 
+#		This function is a dependent of learn(). This is a menu option and 
 #		was broken out in order to keep learn() more clean.
 # Post:
 #	The user's choice
 sub learn_menu_main
 {
-	my ($lfile, $total_learned, $cfile, $cap_bytes, 
-		$cap_lines, $cap_remaining, $this_line, $packet, $total_auth, $total_unauth) = @_;
+	my ($lfile, $total_learned, $cfile, $cap_bytes, $cap_lines, $cap_remaining, 
+		$this_line, $packet, $total_auth, $total_unauth) = @_;
 	my $choice;
 	
 	do
@@ -1855,7 +1856,7 @@ sub learn_menu_main
 #		The first parameter is a reference to a scalar representing the 
 #		modified packet.
 #
-#		This functions as a dependent of learn(). This is a menu option and 
+#		This function is a dependent of learn(). This is a menu option and 
 #		was broken out in order to keep learn() more clean.
 # Post:
 #	The user's choice
@@ -2018,7 +2019,7 @@ sub learn_menu_modify
 #	correctly. See learn().
 #
 #	Note:
-#		This functions as a dependent of learn(). This is a menu option and 
+#		This function is a dependent of learn(). This is a menu option and 
 #		was broken out in order to keep learn() more clean.
 # Post:
 #	The user's choice
@@ -2319,7 +2320,7 @@ sub write_learn_data
 #	Note:
 #		Another item that should be done is changing to a directory that is 
 #		guaranteed to be present (i.e., '/'). This is only necessary if 
-#		the current working directory is in danger of every being unmaounted.
+#		the current working directory is in danger of ever being unmounted.
 #
 #		The error file is created upon entering daemon mode. However, there 
 #		should not be any concern as long as it is zero bytes.
@@ -2371,7 +2372,7 @@ sub save_review_file
 # Pre:
 #	\$	= reference to a hash containing at least the following fields:
 #		host = the host name where the server is running
-#		port = a valid number (0-65535) to bind to
+#		port = a valid number to bind to
 #	$	= scalar representing the current process id
 #
 #	Note:
@@ -2507,8 +2508,10 @@ sub monitor_server
 				log_message($log_msg, $arg->{log_server});
 			}
 			print STDERR "Building notification... " unless($arg->{do_daemon});
-			$notify_message = build_notify_message(\%packet_data, $arg->{sort_cache_date}, 
-				$arg->{do_cache_key_dst}, $total_keys, \$total_count);
+			$date = localtime();
+			$notify_message = build_notify_message($arg->{name}, $date, \%packet_data, 
+				$arg->{sort_cache_date}, $arg->{do_cache_key_dst}, $total_keys, 
+				\$total_count);
 			send_notify($notify_message, $arg->{notify_file}, $arg->{notify_server}, 
 				$arg->{notify_mail}, $arg->{name});
 			if($arg->{do_log}){
@@ -2886,8 +2889,10 @@ sub monitor_server
 							log_message($log_msg, $arg->{log_server});
 						}
 						print STDERR "Building notification... " unless($arg->{do_daemon});
-						$notify_message = build_notify_message(\%packet_data, $arg->{sort_cache_date}, 
-							$arg->{do_cache_key_dst}, $total_keys, \$total_count);
+						$date = localtime();
+						$notify_message = build_notify_message($arg->{name}, $date, \%packet_data, 
+							$arg->{sort_cache_date}, $arg->{do_cache_key_dst}, $total_keys, 
+							\$total_count);
 						send_notify($notify_message, $arg->{notify_file}, $arg->{notify_server}, 
 							$arg->{notify_mail}, $arg->{name});
 						if($arg->{do_log}){
@@ -2924,7 +2929,7 @@ sub monitor_server
 # Pre:
 #	\$	= reference to a hash containing at least the following fields:
 #		host = the host name where the server is running
-#		port = a valid number (0-65535) to bind to
+#		port = a valid number to bind to
 #	$	= scalar representing the current process id
 #	\%	= reference to a hash representing the past learned traffic
 #
@@ -3217,10 +3222,11 @@ sub monitor_client
 #   parse_datetime
 # Pre:
 # 	$ 	= scalar in the format: Day Mon dd hh:mm:ss YYYY
-#	\@  = ref to an array holding the parsed: Day Mon dd hh:mm:ss YYYY
+#	\@  = reference to an array holding the parsed date/time: 
+#		Day Mon dd hh:mm:ss YYYY
 #
 #	Note:
-#		The reference to the array holds to the following elements:
+#		The reference to the array holds the following elements:
 #		[0] - Day of week (i.e., Mon - Sun)
 #		[1] - Month (i.e., Jan - Dec)
 #		[2] - Date of week (i.e., 1 - 31)
@@ -3276,20 +3282,20 @@ sub get_epoch
 				);
 
     $$epoch = timelocal_nocheck($dt->[5], $dt->[4], $dt->[3], $dt->[2], 
-    	$month{$dt->[1]}, $dt->[6]);						
+    			$month{$dt->[1]}, $dt->[6]);						
 }
 # Name:
 #	build_cache
 # Pre:
 #	$	= scalar representing the received packet in the format:
 #		src_ip:port > dst_ip:port
-#	\%	= reference to a hash containg the cache to fill
-#	$	= scalar representing the date/time (e.g. from a call to localtime())
+#	\%	= reference to a hash containing the cache to fill
+#	$	= scalar representing the date/time (from a call to localtime())
 #	$	= scalar representing the record id that was matched as 
 #		unauthorized traffic previously set, or 0 if unlearned.
 #	$	= scalar representing what to use as the cache unique key:
 #		0 = src_ip:port > dst_ip:port (received packet) is the key
-#		1 = dst:port will be the key
+#		1 = dst_ip:port will be the key
 #	
 #	Note:
 #		The default will have the formatted packet as the key due to 
@@ -3304,7 +3310,7 @@ sub get_epoch
 #		
 #		Example:
 #		192.168.0.1:1298 > 192.168.0.65:22 (missed this packet)
-#		192.168.0.65:22 > 192.168.0.1:1298 (response, captured this packet)
+#		192.168.0.65:22 > 192.168.0.1:1298 (response; captured this packet)
 #		
 #		The logic will not see 192.168.0.1:1298 as an existing key and thus 
 #		will add it and create 192.168.0.65 as the sub key. Nothing can be 
@@ -3574,6 +3580,8 @@ sub write_cache
 # Name:
 #	build_notify_message
 # Pre:
+#	$	= scalar representing the program name
+#	$	= scalar representing the date/time (such as through localtime())
 #	\%	= reference to a hash containing the server cached data to build
 #		notification
 #	$	= scalar representing whether to sort by first seen date
@@ -3587,40 +3595,56 @@ sub write_cache
 #	Server notification built and returned
 sub build_notify_message
 {
-	my ($packet_data, $sort_cache_date, $do_cache_key_dst, $total_records, $total_count) = @_;
-	my $notify_message = "\t\t\t\t\t\t\t\tNotification Message:\n";
+	my ($name, $date, $packet_data, $sort_cache_date, $do_cache_key_dst, 
+		$total_records, $total_count) = @_;
+	my $notify_message;
+	my $dnum = 0;
+	my $snum;
 	
 	$$total_count = 0;	#ensure integrity
+	
+	$notify_message = "\t" x 8;
+	$notify_message .= "Notification: Unauthorized or Unknown traffic\n";
+	$notify_message .= "\t" x 8;
+	$notify_message .= "From: $name\n";
+	$notify_message .= "\t" x 8;
+	$notify_message .= "Date: $date\n\n";
 	
 	if($total_records > 0){
 		if($do_cache_key_dst){
 			if($sort_cache_date){
 				while(my ($dst, $src_row) = each %{$packet_data})
 				{
-					$notify_message .= "\nDestination: $dst\n";
+					$dnum++;
+					$snum = 0;
+					$notify_message .= "\n$dnum|DESTINATION|$dst\n";
 					foreach $el (sort{$a->{epoch} <=> $b->{epoch}} values %{$src_row})
 					{
+						$snum++;
 						$$total_count += $el->{count};
 						$el->{record_id} = "N/A" if($el->{record_id} == 0);
-						$notify_message .= "\tSource: $el->{key}\tCount: $el->{count}\t";
-						$notify_message .= "First Seen: $el->{bdt}\tLast Seen: $el->{edt}\t";
-						$notify_message .= "Rule Violation: $el->{record_id}\tStatus: $el->{status}\n";
+						$notify_message .= "\t$snum|SOURCE|$el->{key}|COUNT|$el->{count}|";
+						$notify_message .= "FIRST SEEN|$el->{bdt}|LAST SEEN|$el->{edt}|";
+						$notify_message .= "RULE VIOLATION|$el->{record_id}|STATUS|$el->{status}\n";
 					}
 				}
 			}else{
 				while(my ($dst, $src_row) = each %{$packet_data})
 				{
-					$notify_message .= "\nDestination: $dst\n";
+					$dnum++;
+					$snum = 0;
+					$notify_message .= "\n$dnum|DESTINATION|$dst\n";
 					for my $src (keys %{$src_row})
 					{
+						$snum++;
 						$$total_count += $src_row->{$src}{count};
 						$src_row->{$src}{record_id} = "N/A" if($src_row->{$src}{record_id} == 0);
-						$notify_message .= "\tSource: $src_row->{$src}{key}\t";
-						$notify_message .= "Count: $src_row->{$src}{count}\t";
-						$notify_message .= "First Seen: $src_row->{$src}{bdt}\t";
-						$notify_message .= "Last Seen: $src_row->{$src}{edt}\t";
-						$notify_message .= "Rule Violation: $src_row->{$src}{record_id}\t";
-						$notify_message .= "Status: $src_row->{$src}{status}\n";
+						$notify_message .= "\t$snum|SOURCE|$src_row->{$src}{key}|";
+						$notify_message .= "COUNT|$src_row->{$src}{count}|";
+						$notify_message .= "FIRST SEEN|$src_row->{$src}{bdt}|";
+						$notify_message .= "LAST SEEN|$src_row->{$src}{edt}|";
+						$notify_message .= "RULE VIOLATION|$src_row->{$src}{record_id}|";
+						$notify_message .= "STATUS|$src_row->{$src}{status}\n";
 					}
 				}
 			}
@@ -3628,28 +3652,30 @@ sub build_notify_message
 			if($sort_cache_date){
 				foreach $el (sort{$a->{epoch} <=> $b->{epoch}} values %{$packet_data})
 				{
+					$dnum++;
 					$$total_count += $el->{count};
 					$el->{record_id} = "N/A" if($el->{record_id} == 0);
-					$notify_message .= "Source/Destination: $el->{packet}\tCount: $el->{count}\t";
-					$notify_message .= "First Seen: $el->{bdt}\tLast Seen: $el->{edt}\t";
-					$notify_message .= "Rule Violation: $el->{record_id}\tStatus: $el->{status}\n";
+					$notify_message .= "$dnum|SOURCE/DESTINATION|$el->{packet}|Count|$el->{count}|";
+					$notify_message .= "FIRST SEEN|$el->{bdt}|LAST SEEN|$el->{edt}|";
+					$notify_message .= "RULE VIOLATION|$el->{record_id}|STATUS|$el->{status}\n";
 				}
 			}else{
 				for my $k (keys %{$packet_data})
 				{
+					$dnum++;
 					$$total_count += $packet_data->{$k}{count};
 					$packet_data->{$k}{record_id} = "N/A" if($packet_data->{$k}{record_id} == 0);
-					$notify_message .= "Source/Destination: $packet_data->{$k}{packet}\t";
-					$notify_message .= "Count: $packet_data->{$k}{count}\t";
-					$notify_message .= "First Seen: $packet_data->{$k}{bdt}\t";
-					$notify_message .= "Last Seen: $packet_data->{$k}{edt}\t";
-					$notify_message .= "Rule Violation: $packet_data->{$k}{record_id}\t";
-					$notify_message .= "Status: $packet_data->{$k}{status}\n";
+					$notify_message .= "$dnum|SOURCE/DESTINATION|$packet_data->{$k}{packet}|";
+					$notify_message .= "COUNT|$packet_data->{$k}{count}|";
+					$notify_message .= "FIRST SEEN|$packet_data->{$k}{bdt}|";
+					$notify_message .= "LAST SEEN|$packet_data->{$k}{edt}|";
+					$notify_message .= "RULE VIOLATION|$packet_data->{$k}{record_id}|";
+					$notify_message .= "STATUS|$packet_data->{$k}{status}\n";
 				}
 			}
 		}
-		$notify_message .= "\n\t\t\t\t\t\t\t\tUnique Records: $total_records"; 
-		$notify_message .= "\t\tPacket Count: $$total_count\n";
+		$notify_message .= "\n\t\t\t\t\t\t\t\tUNIQUE RECORDS: $total_records"; 
+		$notify_message .= "\t\tPACKET COUNT: $$total_count\n";
 	}else{
 		$notify_message .= "There is no past data or current data cached to report.\n";
 		$notify_message .= "If this is believed to be in error, check configuration or logs.\n";
@@ -3713,7 +3739,7 @@ sub send_notify
 # Name:
 #	log_message
 # Pre:
-#	$ 	= scalar representing what to log.
+#	$ 	= scalar representing what to log
 #	$	= scalar representing the file to log to
 #
 #	Note:
@@ -3756,12 +3782,17 @@ sub usage
 	my ($arg) = @_;
 	
    	die "Invalid input (try: -h or --help).\n" unless($ARGV[0] =~ m/^(\-h|--help)\b/);
+   	
+   	#license
    	print STDERR "\n$arg->{name} copyright (C) 2010-2016 Ray T. Daley (rcdsox\@gmail.com)\n\n";
     print STDERR "This program is free software: you can redistribute it and/or modify\n";
     print STDERR "it under the terms of the GNU General Public License as published by\n";
     print STDERR "the Free Software Foundation, either version 3 of the License, or\n";
     print STDERR "(at your option) any later version. See \"LICENSE.txt\" or if missing:\n";
     print STDERR "http://www.gnu.org/licenses/.\n\n";
+    
+    #usage
+    print STDERR "Usage:\n";
    	print STDERR "\t$arg->{name} <command> [option ...]\n";
    	print STDERR "\t$arg->{name} [option ...] <command>\n";
    	
