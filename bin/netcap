@@ -773,10 +773,10 @@ sub capture
 			last;
 		}else{
 			if($arg->{do_unique}){
-				print "$traffic ($tcp_flag)\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				print "$traffic [$tcp_flag]\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
 				$data{$traffic}++;
 			}else{
-				print "$traffic ($tcp_flag)\n" if($arg->{do_stdout});
+				print "$traffic [$tcp_flag]\n" if($arg->{do_stdout});
 				$data{$packet_count} = $traffic;
 			}
 		}
@@ -861,10 +861,9 @@ sub get_capture_packet
     	$$traffic = "$ip->{src_ip}:$tcp->{src_port} > $ip->{dest_ip}:$tcp->{dest_port}";
     	if($tcp->{hlen} > 0){
     		$flag = $tcp->{flags};
-    		$$tcp_flag = (exists $tcp_flags{$flag}) ? $tcp_flags{$flag} : "tcp" ;
-    		$$tcp_flag .= " [bits: $flag]";
+    		$$tcp_flag = (exists $tcp_flags{$flag}) ? "tcp:$tcp_flags{$flag}:$flag" : "tcp:none:$flag";
     	}else{
-    		$$tcp_flag = "udp [bits: none]";
+    		$$tcp_flag = "udp:none:none";
     	}
     	$$total_ip_count++;
 	}else{
