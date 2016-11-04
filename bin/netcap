@@ -388,22 +388,22 @@ sub main
 				print STDERR "Capture file not defined.\n";	
 			}
 			print STDERR "$arg{name} will attempt to:\n";
-			print STDERR "-> capture traffic to $arg{cfile}\n";
-			print STDERR "-> capture unique traffic\n" if($arg{do_unique});
+			print STDERR "|--> capture traffic to $arg{cfile}\n";
+			print STDERR "|--> capture unique traffic\n" if($arg{do_unique});
 			if($arg{do_stdout}){
 				if($arg{do_unique}){
-					print STDERR "-> send unique traffic to stdout (along with $arg{cfile})\n";
+					print STDERR "|--> send unique traffic to stdout\n";
 				}else{
-					print STDERR "-> send traffic to stdout (along with $arg{cfile})\n";
+					print STDERR "|--> send traffic to stdout\n";
 				}
 			}else{
-				print STDERR "-> suppress traffic from stdout stream\n";
+				print STDERR "|--> suppress traffic from stdout stream\n";
 			}
-			print STDERR "-> ensure traffic matches: \"$arg{regex_cap}\"\n" if($arg{do_regex_cap});
+			print STDERR "|--> ensure traffic matches: \"$arg{regex_cap}\"\n" if($arg{do_regex_cap});
 			if($arg{promiscuous}){
-				print STDERR "-> listen in promiscuous mode\n";
+				print STDERR "|--> listen in promiscuous mode\n";
 			}else{
-				print STDERR "-> avoid promiscuous mode\n";
+				print STDERR "|--> avoid promiscuous mode\n";
 			}
 			capture(\%arg, $env{pid});
 		}elsif($arg{do_learn}){
@@ -421,11 +421,11 @@ sub main
 			}
 			die "File: $arg{lfile} exists but is not a plain file. Check file type/bits.\n" 
 				if(-e $arg{lfile} && ! -f $arg{lfile});
-			print STDERR "$arg{name} will attempt to:\n-> read from $arg{cfile}\n";
-			print STDERR "-> write learned traffic to $arg{lfile}\n";
-			print STDERR "-> suppress user comments while learning\n" 
+			print STDERR "$arg{name} will attempt to:\n|--> read from $arg{cfile}\n";
+			print STDERR "|--> write learned traffic to $arg{lfile}\n";
+			print STDERR "|--> suppress user comments while learning\n" 
 				if(!$arg{do_comment});
-			print STDERR "-> suppress creating reverse rules while learning\n" 
+			print STDERR "|--> suppress creating reverse rules while learning\n" 
 				if(!$arg{do_reverse_rule});
 			if((-e $arg{lfile}) && (! -z $arg{lfile})){
 				print STDERR "Processing $arg{lfile}... ";
@@ -439,7 +439,9 @@ sub main
 				die "Interface option not necessary when creating a monitoring server.\n"
 					if(defined($arg{interface}));
 				die "Unique option not necessary when creating a monitoring server.\n"
-					if(defined($arg{do_unique}));
+					if($arg{do_unique});
+				die "Promiscuous option not necessary when creating a monitoring server.\n"
+					if($arg{promiscuous});
 				daemonize(\$env{pid}, $arg{error_file}) if($arg{do_daemon});
 				monitor_server(\%arg, $env{pid});
 				print STDERR "$arg{name} (server pid: $env{pid}) has finished monitoring.\n"
@@ -678,7 +680,8 @@ sub capture
 	my $total_ip_packets = 0;
 	my $packet_count = 0;
 	my $packet;	
-	my $traffic; 
+	my $traffic;
+	my $tcp_flag; 
 	my %data;
 	my $ucount = ($arg->{do_unique} == 0) ? "Not enabled" : 0;
 	my $packet_max = ($arg->{packet_count} == 0) ? "Indefinite amount" : $arg->{packet_count};
@@ -686,6 +689,10 @@ sub capture
 	$SIG{USR1} = sub
 	{
 		print STDERR "\n\n-- User signal caught (pid: $pid).\n";
+		if(defined($arg->{config_file})){
+			print STDERR "\nReloading configuration: $arg->{config_file}\n";
+			read_config($arg->{config_file}, $arg);
+		}
 		$ucount = keys(%data) if($arg->{do_unique});
 		print STDERR "\nTotal packets:\n";
 		print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
@@ -741,11 +748,10 @@ sub capture
 	print STDERR "|--> To display current capture progress stats, send a USR1\n";
 	print STDERR "|--> signal to pid: $pid\n\n";
 	
-	
 	for(;;)
 	{
 		get_capture_packet($pcap, \$packet, \$traffic, \$total_net_packets, 
-			\$total_ip_packets, 0);
+			\$total_ip_packets, \$tcp_flag);
 		next if($traffic == 0);
 		if($arg->{do_regex_cap}){
 			$match = 0;
@@ -767,10 +773,10 @@ sub capture
 			last;
 		}else{
 			if($arg->{do_unique}){
-				print "$traffic\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				print "$traffic ($tcp_flag)\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
 				$data{$traffic}++;
 			}else{
-				print "$traffic\n" if($arg->{do_stdout});
+				print "$traffic ($tcp_flag)\n" if($arg->{do_stdout});
 				$data{$packet_count} = $traffic;
 			}
 		}
@@ -2412,6 +2418,10 @@ sub monitor_server
 			log_message($log_msg, $arg->{log_server});
 		}
 		print STDERR "\n\n-- User signal caught (server pid: $pid).\n" unless($arg->{do_daemon});
+		if(defined($arg->{config_file})){
+			print STDERR "\nReloading configuration: $arg->{config_file}\n";
+			read_config($arg->{config_file}, $arg);
+		}
 		$usr_sig = 1;
 		$total_keys = keys(%packet_data);
 		if($arg->{do_log}){
@@ -2950,6 +2960,10 @@ sub monitor_client
 	{
 		print STDERR "\n\n-- User signal caught (client pid: $pid). Will refresh client.\n"
 			unless($arg->{do_daemon});
+		if(defined($arg->{config_file})){
+			print STDERR "\nReloading configuration: $arg->{config_file}\n";
+			read_config($arg->{config_file}, $arg);
+		}
 		if($arg->{do_log}){
 			$date = localtime();
 			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
@@ -3157,13 +3171,14 @@ sub monitor_client
 			if($arg->{do_unique}){
 				if(! exists($data{$packet})){
 					if($arg->{do_stdout}){
-						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s\n", $date, $arg->{name}, $pid, 
-								$arg->{host}, $arg->{port}, $protocol, $packet, $tcp_flag);
+						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s\n", $date, 
+								$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+								$protocol, $packet, $record_id, $tcp_flag);
 					}
 					if($arg->{do_log}){
 						$date = localtime();
 						$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-						$log_msg .= "$protocol|$packet|$tcp_flag\n";
+						$log_msg .= "$protocol|$packet|$record_id|$tcp_flag\n";
 						log_message($log_msg, $arg->{log_client});
 					}
 				}
@@ -3172,13 +3187,14 @@ sub monitor_client
 				$data{$packet}++;
 			}else{
 				if($arg->{do_stdout}){
-					printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s\n", $date, $arg->{name}, $pid, 
-						$arg->{host}, $arg->{port}, $protocol, $packet, $tcp_flag);
+					printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s\n", $date, 
+						$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+						$protocol, $packet, $record_id, $tcp_flag);
 				}
 				if($arg->{do_log}){
 					$date = localtime();
 					$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-					$log_msg .= "$protocol|$packet|$tcp_flag\n";
+					$log_msg .= "$protocol|$packet|$record_id|$tcp_flag\n";
 					log_message($log_msg, $arg->{log_client});
 				}
 				$socket->send("$packet|$record_id") or die("$!: $arg->{name} (pid: $pid) unable ", 
@@ -3435,6 +3451,7 @@ sub update_cache
 					$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
 					$packet_data->{$dst}->{$src}{edt} = $cache_line[3];
 					$packet_data->{$dst}->{$src}{record_id} = $cache_line[4];
+					$packet_data->{$dst}->{$src}{status} = "Old";
 				}else{
 					if(! exists($packet_data->{$dst}->{$src})){
 						$packet_data->{$dst}->{$src}{key} = $src;
@@ -3443,6 +3460,7 @@ sub update_cache
 						$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
 						$packet_data->{$dst}->{$src}{edt} = $cache_line[3];
 						$packet_data->{$dst}->{$src}{record_id} = $cache_line[4];
+						$packet_data->{$dst}->{$src}{status} = "Old";
 					}else{
 						$packet_data->{$dst}->{$src}{count} += $cache_line[1];
 						$packet_data->{$dst}->{$src}{bdt} = $cache_line[2];
@@ -3472,6 +3490,7 @@ sub update_cache
 					$packet_data->{$cache_line[0]}{bdt} = $cache_line[2];
 					$packet_data->{$cache_line[0]}{edt} = $cache_line[3];
 					$packet_data->{$cache_line[0]}{record_id} = $cache_line[4];
+					$packet_data->{$cache_line[0]}{status} = "Old";
 				}else{
 					$packet_data->{$cache_line[0]}{count} += $cache_line[1];
 					$packet_data->{$cache_line[0]}{bdt} = $cache_line[2];
@@ -3846,12 +3865,10 @@ sub usage
     print STDERR "\t# to read multiple packets from the OS kernel in one\n";
     print STDERR "\t# operation. Not all platforms support a read timeout; on\n";
     print STDERR "\t# platforms that don't, the read timeout is ignored. Must\n";
-    print STDERR "\t# be in the range of 1-60000 (or 0 to 60 seconds). A zero\n";
-    print STDERR "\t# value on platforms that support a read timeout, will cause\n";
-    print STDERR "\t# a read to wait forever to allow enough packets to arrive\n";
-    print STDERR "\t# with no timeout. If not specified, the read timeout will\n";
-    print STDERR "\t# default to 5 milliseconds (or .005 seconds). Useful to use\n";
-    print STDERR "\t# with: --capture, --monitor (--client)\n\n";
+    print STDERR "\t# be in the range of 1-60000 (or .001 to 60 seconds). If not\n";
+    print STDERR "\t# specified, the read timeout will default to 5 milliseconds\n";
+    print STDERR "\t# (or .005 seconds). Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
     print STDERR "-p, --promiscuous\n";
     print STDERR "\t# Places device into promiscuous mode before capturing. Useful\n";
     print STDERR "\t# to use with:\n";
