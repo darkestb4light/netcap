@@ -683,6 +683,7 @@ sub capture
 	my $packet;	
 	my $traffic;
 	my $tcp_flag; 
+	my $hdr;
 	my %data;
 	my $ucount = ($arg->{do_unique} == 0) ? "Not enabled" : 0;
 	my $packet_max = ($arg->{packet_count} == 0) ? "Indefinite amount" : $arg->{packet_count};
@@ -752,7 +753,7 @@ sub capture
 	for(;;)
 	{
 		get_capture_packet($pcap, \$packet, \$traffic, \$total_net_packets, 
-			\$total_ip_packets, \$tcp_flag);
+			\$total_ip_packets, \$hdr, \$tcp_flag);
 		next if($traffic == 0);
 		if($arg->{do_regex_cap}){
 			$match = 0;
@@ -774,10 +775,10 @@ sub capture
 			last;
 		}else{
 			if($arg->{do_unique}){
-				print "$traffic [$tcp_flag]\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
 				$data{$traffic}++;
 			}else{
-				print "$traffic [$tcp_flag]\n" if($arg->{do_stdout});
+				print "$traffic|$hdr|$tcp_flag|\n" if($arg->{do_stdout});
 				$data{$packet_count} = $traffic;
 			}
 		}
@@ -794,6 +795,8 @@ sub capture
 #	\$	= reference to a scalar holding the total packets captured regardless
 #		of type
 #	\$	= reference to a scalar holding the total IP packets captured
+#	\$	= reference to a scalar holding the received packet header (this is 
+#		filled by reading %hdr after calling an appropriate Net::Pcap API
 #	\$	= reference to the tcp flag constant for the captured packet	
 #
 #	Note:
@@ -821,12 +824,24 @@ sub capture
 #		The key is the value contained in the NetPacket::TCP object for the 
 #		given packet. Note that the source has these as hexadecimal constants. 
 #		This function uses the decimal equivalent.
+#
+#	The hash "%hdr" is filled with predefined members (see: Net::Pcap):
+#		len 	= the total length of the packet.
+#		caplen 	= the actual captured length of the packet data.
+#		tv_sec 	= seconds value of the packet timestamp.
+#		tv_usec = microseconds value of the packet timestamp.
+#	
+#	If debugging is needed (e.g. %hdr):
+#	...
+#	use Data::Dumper;
+#	print Dumper(\%hdr);
+#	...
 # Post:
 #	Finished getting raw captured packets off the wire and parsing based on the 
 #	ethernet type; Returns traffic via reference or 0 if unsupported.
 sub get_capture_packet
 {
-    my ($pcap, $packet, $traffic, $total_packet_count, $total_ip_count, $tcp_flag) = @_;
+    my ($pcap, $packet, $traffic, $total_packet_count, $total_ip_count, $hdr, $tcp_flag) = @_;
     my %hdr;
     my $eth_data;
     my $flag;
@@ -848,8 +863,9 @@ sub get_capture_packet
 						128 => "CWR",		#extension to TCP/IP (rfc3168)
 					);
 	
-	#get raw packet off the wire
-	$$packet = Net::Pcap::next($pcap, \%hdr);
+	#get raw packet off the wire and fill header
+	Net::Pcap::pcap_next_ex($pcap, \%hdr, $packet);
+	$$hdr = "$hdr{caplen}:$hdr{len}:$hdr{tv_sec}:$hdr{tv_usec}";
 	
     #strip and decode ethernet encapsulation of captured packet 
     $eth_data = NetPacket::Ethernet::strip($$packet);
@@ -860,11 +876,11 @@ sub get_capture_packet
     	$ip = NetPacket::IP->decode($eth_data);
     	$tcp = NetPacket::TCP->decode($ip->{data});
     	$$traffic = "$ip->{src_ip}:$tcp->{src_port} > $ip->{dest_ip}:$tcp->{dest_port}";
+    	$flag = $tcp->{flags};
     	if($tcp->{hlen} > 0){
-    		$flag = $tcp->{flags};
-    		$$tcp_flag = (exists $tcp_flags{$flag}) ? "tcp:$tcp_flags{$flag}:$flag" : "tcp:none:$flag";
+    		$$tcp_flag = (exists $tcp_flags{$flag}) ? "tcp:$tcp_flags{$flag}:$flag" : "udp:none:$flag";
     	}else{
-    		$$tcp_flag = "udp:none:none";
+    		$$tcp_flag = "udp:none:$flag";
     	}
     	$$total_ip_count++;
 	}else{
@@ -2390,6 +2406,8 @@ sub monitor_server
 	my $total_keys = 0;
 	my $total_count = 0;
 	my $record_id = 0;
+	my $hdr,
+	my $tcp_flag,
 	my $usr_sig = 0;
 	my $socket;
 	my $packet_count = 0;
@@ -2759,7 +2777,7 @@ sub monitor_server
 		}
 		$date = localtime();
 		chomp($packet);
-		($packet, $record_id) = split(/\|/, $packet);
+		($packet, $record_id, $hdr, $tcp_flag) = split(/\|/, $packet);
 		$seen = build_cache($packet, \%packet_data, $date, $record_id, $arg->{do_cache_key_dst}, 
 					\$src, \$dst);
 		if(! $seen){
@@ -2768,22 +2786,22 @@ sub monitor_server
 				$log_msg = "Client Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
 				if($arg->{do_cache_key_dst}){
 					my $peer = $socket->peerhost.":".$socket->peerport;
-					$log_msg .= "$peer|$protocol|$src > $dst|$record_id\n";
+					$log_msg .= "$peer|$protocol|$src > $dst|$record_id|$hdr|$tcp_flag\n";
 				}else{
-					$log_msg .= "$peer|$protocol|$packet|$record_id\n";
+					$log_msg .= "$peer|$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
 				}
 				log_message($log_msg, $arg->{log_server});
 			}
 			if($arg->{do_stdout}){
 				if($arg->{do_cache_key_dst}){
 					$packet = "$src > $dst";
-					printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, $arg->{name}, 
+					printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s|%s|%s\n", $date, $arg->{name}, 
 						$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
-						$protocol, $packet, $record_id);
+						$protocol, $packet, $record_id, $hdr, $tcp_flag);
 				}else{
-					printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, $arg->{name}, 
+					printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s|%s|%s\n", $date, $arg->{name}, 
 						$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
-						$protocol, $packet, $record_id);
+						$protocol, $packet, $record_id, $hdr, $tcp_flag);
 				}
 			}
 			if($arg->{packet_count} > 0){
@@ -2949,6 +2967,7 @@ sub monitor_client
 	my $raw_packet; 
 	my $packet;
 	my $tcp_flag;
+	my $hdr;
 	my $total_net_packets = 0;
 	my $total_ip_packets = 0;
 	my $packet_count = 0;
@@ -3141,7 +3160,7 @@ sub monitor_client
 			$usr_sig = 0;
 		}
 		get_capture_packet($pcap, \$raw_packet, \$packet, \$total_net_packets, 
-				\$total_ip_packets, \$tcp_flag);
+				\$total_ip_packets, \$hdr, \$tcp_flag);
 		next if($packet == 0);
 		next if(parse_packet($packet, \@parsed_packet));
 		$match = find_match($learned, \@parsed_packet, \$record_id);
@@ -3175,30 +3194,30 @@ sub monitor_client
 			if($arg->{do_unique}){
 				if(! exists($data{$packet})){
 					if($arg->{do_stdout}){
-						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s\n", $date, 
+						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s|%s\n", $date, 
 								$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
-								$protocol, $packet, $record_id, $tcp_flag);
+								$protocol, $packet, $record_id, $hdr, $tcp_flag);
 					}
 					if($arg->{do_log}){
 						$date = localtime();
 						$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-						$log_msg .= "$protocol|$packet|$record_id|$tcp_flag\n";
+						$log_msg .= "$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
 						log_message($log_msg, $arg->{log_client});
 					}
 				}
-				$socket->send("$packet|$record_id") or die("$!: $arg->{name} (pid: $pid) unable ", 
+				$socket->send("$packet|$record_id|$hdr|$tcp_flag") or die("$!: $arg->{name} (pid: $pid) unable ", 
 														"to send to $arg->{host}:$arg->{port}\n");
 				$data{$packet}++;
 			}else{
 				if($arg->{do_stdout}){
-					printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s\n", $date, 
+					printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s|%s\n", $date, 
 						$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
-						$protocol, $packet, $record_id, $tcp_flag);
+						$protocol, $packet, $record_id, $hdr, $tcp_flag);
 				}
 				if($arg->{do_log}){
 					$date = localtime();
 					$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-					$log_msg .= "$protocol|$packet|$record_id|$tcp_flag\n";
+					$log_msg .= "$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
 					log_message($log_msg, $arg->{log_client});
 				}
 				$socket->send("$packet|$record_id") or die("$!: $arg->{name} (pid: $pid) unable ", 
@@ -3799,7 +3818,7 @@ sub usage
    	#commands
 	print STDERR "\n\t[Commands]:\n\n";
 	print STDERR "-li, --list-interfaces\n";
-	print STDERR "\t# List all available interfaces and exit. Useful when\n";
+	print STDERR "\t# List all available interfaces and exit. Useful before\n";
 	print STDERR "\t# capturing (see: --capture, --interface).\n\n";
     print STDERR "-c, --capture\n";
     print STDERR "\t# Capture packets from an interface. Useful prior to one\n";
@@ -3830,7 +3849,7 @@ sub usage
 	print STDERR "\t# running client (--client). The server will also notify if\n"; 
 	print STDERR "\t# notifications are enabled (see --notify), a USR1 signal is\n";
 	print STDERR "\t# sent to the process ID of a client/server, or <count> is\n";
-	print STDERR "\t# reached (see: packet-count). This command is most useful once\n";
+	print STDERR "\t# reached (see: --packet-count). This command is most useful once\n";
 	print STDERR "\t# you believe you have captured sufficient traffic for the given\n";
 	print STDERR "\t# environment (see: --capture) and/or have sufficiently created\n";
 	print STDERR "\t# rules to minimize false positives/negatives (see: --learn).\n\n";
@@ -3853,10 +3872,10 @@ sub usage
 	print STDERR "\t# a rule for each CIDR. Additionally, perhaps there are IPs that\n";
 	print STDERR "\t# are authorized versus those that are not, but they are contained\n";
 	print STDERR "\t# within the same CIDR blocks. Instead, a regular expression would\n";
-	print STDERR "\t# would solve both of these issues. To ensure you get the expression\n";
-	print STDERR "\t# to properly conver what is needed, this command can be used to\n";
-	print STDERR "\t# return a given IP range from which you can build the expression.\n";
-	print STDERR "\t# For example, to return the IP range for 10.0.0.0/8\n";
+	print STDERR "\t# solve both of these issues. To ensure you get the expression to\n";
+	print STDERR "\t# properly conver what is needed, this command can be used to return\n";
+	print STDERR "\t# a given IP range from which you can build the expression. For\n";
+	print STDERR "\t# example, to return the IP range for 10.0.0.0/8\n";
 	print STDERR "\t# ... --get-range 10.0.0.0/8\n\n";
     print STDERR "-gc, --get-cidr <ip-range>\n"; 
     print STDERR "\t# Return CIDR blocks, given <ip-range>. This can be useful to\n";
