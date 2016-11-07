@@ -127,7 +127,8 @@ sub main
 					do_testre			=> 0,
 					testre_pattern		=> undef,
 					testre_expression	=> undef,
-					config_file			=> undef
+					config_file			=> undef,
+					do_packet_detail	=> 0
 				);
 	my %learned = 	(
 						record_id		=> 0,
@@ -156,6 +157,8 @@ sub main
     			$arg{config_file} = "$arg{name}.config";
     		}
     		read_config($arg{config_file}, \%arg);
+    	}elsif($ARGV[$i] =~ m/^-pd$|^--packet-detail$/){
+    		$arg{do_packet_detail} = 1;
     	}elsif($ARGV[$i] =~ m/^-s$|^--stdout$/){
     		$arg{do_stdout} = 1;
     	}elsif($ARGV[$i] =~ m/^-i$|^--interface$/){
@@ -682,8 +685,8 @@ sub capture
 	my $packet_count = 0;
 	my $packet;	
 	my $traffic;
-	my $tcp_flag; 
 	my $hdr;
+	my $tcp_flag;
 	my %data;
 	my $ucount = ($arg->{do_unique} == 0) ? "Not enabled" : 0;
 	my $packet_max = ($arg->{packet_count} == 0) ? "Indefinite amount" : $arg->{packet_count};
@@ -778,7 +781,7 @@ sub capture
 				print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
 				$data{$traffic}++;
 			}else{
-				print "$traffic|$hdr|$tcp_flag|\n" if($arg->{do_stdout});
+				print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout});
 				$data{$packet_count} = $traffic;
 			}
 		}
@@ -878,7 +881,7 @@ sub get_capture_packet
     	$$traffic = "$ip->{src_ip}:$tcp->{src_port} > $ip->{dest_ip}:$tcp->{dest_port}";
     	$flag = $tcp->{flags};
     	if($tcp->{hlen} > 0){
-    		$$tcp_flag = (exists $tcp_flags{$flag}) ? "tcp:$tcp_flags{$flag}:$flag" : "udp:none:$flag";
+   			$$tcp_flag = (exists $tcp_flags{$flag}) ? "tcp:$tcp_flags{$flag}:$flag" : "tcp:none:$flag";
     	}else{
     		$$tcp_flag = "udp:none:$flag";
     	}
@@ -1026,15 +1029,17 @@ sub test_regex
 	my $match = 0;
 	
 	print "\nNote:\nKnowledge of regular expression syntax is left up to the user. Follow\n";
-	print "the general guidelines below to help build a compliant rule using an expression.\n";
+	print "the general guidelines below to help build a compliant rule using an\n";
+	print "expression. One can view re_format(7) for some guidelines on regular\n";
+	print "expressions if desired.\n";
 	
 	printf("\n%s%s%s%s%s%s%s%s\n", 
 			"- <packet_pattern> must be a valid IPv4 format followed by a colon and\n",
 			"port number\n",
 			"- CIDR blocks and regular expressions are only valid for <expression>\n", 
 			"- CIDR blocks can only contain regular expressions for their ports\n",
-			"- Simulate all values in a given octet with: \\d{1,3} or .*\n",
-			"- Simulate all values for ports with: \\d{1,5} or *\n",
+			"- Simulate all possible values in a given octet with: \\d{1,3} or .*\n",
+			"- Simulate all possible values for ports with: \\d{1,5} or *\n",
 			"- Escape periods (e.g., \\.) that may prefix the following range/quantifier: .*\n",
 			"- It may be necessary to surround <expression> with quotes\n");
 			
@@ -3817,9 +3822,7 @@ sub usage
    	
    	#commands
 	print STDERR "\n\t[Commands]:\n\n";
-	print STDERR "-li, --list-interfaces\n";
-	print STDERR "\t# List all available interfaces and exit. Useful before\n";
-	print STDERR "\t# capturing (see: --capture, --interface).\n\n";
+	
     print STDERR "-c, --capture\n";
     print STDERR "\t# Capture packets from an interface. Useful prior to one\n";
     print STDERR "\t# deciding to learn (see: --learn) or monitoring traffic\n";
@@ -3829,6 +3832,25 @@ sub usage
     print STDERR "\t# If you are not sure what devices are available, you can\n";
     print STDERR "\t# leverage various commands to provide a list. Alternatively,\n";
     print STDERR "\t# $arg->{name} can attempt to do so (see: --list-interfaces).\n\n";
+    print STDERR "-gc, --get-cidr <ip-range>\n"; 
+    print STDERR "\t# Return CIDR blocks, given <ip-range>. This can be useful to\n";
+    print STDERR "\t# ensure all CIDR blocks are covered for various rules. For\n";
+    print STDERR "\t# example, to return the CIDR blocks, given <ip-range>:\n"; 
+    print STDERR "\t# ... --get-cidr \"172.20.0.0-10-172.40.255.255\"\n\n";
+    print STDERR "-gr, --get-range <cidr>\n";
+	print STDERR "\t# Return an IP range, given <cidr>. This can be useful when\n";
+	print STDERR "\t# CIDR blocks may not suffice. This could be because a given\n";
+	print STDERR "\t# IP rnage covers too many CIDR blocks and thus would require\n";
+	print STDERR "\t# a rule for each CIDR. Additionally, perhaps there are IPs that\n";
+	print STDERR "\t# are authorized versus those that are not, but they are contained\n";
+	print STDERR "\t# within the same CIDR blocks. Instead, a regular expression would\n";
+	print STDERR "\t# solve both of these issues. To ensure you get the expression to\n";
+	print STDERR "\t# properly conver what is needed, this command can be used to return\n";
+	print STDERR "\t# a given IP range from which you can build the expression. For\n";
+	print STDERR "\t# example, to return the IP range for 10.0.0.0/8\n";
+	print STDERR "\t# ... --get-range 10.0.0.0/8\n\n";
+	print STDERR "-h, --help\n";
+    print STDERR "\t# Display this menu and exit.\n\n";
     print STDERR "-l, --learn\n";
     print STDERR "\t# Learn from previously captured packets. This is useful to\n";
     print STDERR "\t# prepare for monitoring traffic (see: --monitor). It is not\n";
@@ -3842,6 +3864,9 @@ sub usage
     print STDERR "\t# rules reside above less specific rules. For example, the last\n";
     print STDERR "\t# rule would generally be: ... 0.0.0.0/0:* > 0.0.0.0/0:*... as it\n";
     print STDERR "\t# would match ALL traffic once hit.\n\n";
+    print STDERR "-li, --list-interfaces\n";
+	print STDERR "\t# List all available interfaces and exit. Useful before\n";
+	print STDERR "\t# capturing (see: --capture, --interface).\n\n";
 	print STDERR "-m, --monitor <--server | --client> <host> <port>\n";
 	print STDERR "\t# Monitor traffic over a network. A USR1 signal will cause\n"; 
 	print STDERR "\t# $arg->{name} to either refresh the running server cache\n";
@@ -3865,27 +3890,11 @@ sub usage
 	print STDERR "\t# IP within the 192.168.0.0/16 (192.168.0.10) where HTTP/S\n";
 	print STDERR "\t# traffic matches a rule being considered:\n";
 	print STDERR "\t# \"192.168.0.10:80\" \"192.168.0.0/16:80|443\"\n\n";
-	print STDERR "-gr, --get-range <cidr>\n";
-	print STDERR "\t# Return an IP range, given <cidr>. This can be useful when\n";
-	print STDERR "\t# CIDR blocks may not suffice. This could be because a given\n";
-	print STDERR "\t# IP rnage covers too many CIDR blocks and thus would require\n";
-	print STDERR "\t# a rule for each CIDR. Additionally, perhaps there are IPs that\n";
-	print STDERR "\t# are authorized versus those that are not, but they are contained\n";
-	print STDERR "\t# within the same CIDR blocks. Instead, a regular expression would\n";
-	print STDERR "\t# solve both of these issues. To ensure you get the expression to\n";
-	print STDERR "\t# properly conver what is needed, this command can be used to return\n";
-	print STDERR "\t# a given IP range from which you can build the expression. For\n";
-	print STDERR "\t# example, to return the IP range for 10.0.0.0/8\n";
-	print STDERR "\t# ... --get-range 10.0.0.0/8\n\n";
-    print STDERR "-gc, --get-cidr <ip-range>\n"; 
-    print STDERR "\t# Return CIDR blocks, given <ip-range>. This can be useful to\n";
-    print STDERR "\t# ensure all CIDR blocks are covered for various rules. For\n";
-    print STDERR "\t# example, to return the CIDR blocks, given <ip-range>:\n"; 
-    print STDERR "\t# ... --get-cidr \"172.20.0.0-10-172.40.255.255\"\n\n";
+	
+
     print STDERR "-v, --version\n";
     print STDERR "\t# Display the $arg->{name} version and exit.\n\n";
-    print STDERR "-h, --help\n";
-    print STDERR "\t# Display this menu and exit.\n\n";
+   
     
     #options
     print STDERR "\n\t[Options]:\n\n";
@@ -3895,17 +3904,93 @@ sub usage
     print STDERR "\t# overwrite the configuration option. If <config-file> is\n";
     print STDERR "\t# omitted, $arg->{config_file} is used. Useful to use with:\n";
     print STDERR "\t# --capture, --learn, --monitor\n\n";
-    print STDERR "-s, --stdout\n";
-    print STDERR "\t# Traffic is also sent to stdout if possible. Useful to use with:\n";
-    print STDERR "\t# --capture, --monitor\n\n";
-    print STDERR "-i, --interface <device>\n";
+    print STDERR "-cf, --capture-file [cfile]\n";
+    print STDERR "\t# Where $arg->{name} will write (capture mode) or read\n";
+    print STDERR "\t# (learn mode) captures. If option or [cfile] is omitted\n"; 
+    print STDERR "\t# $arg->{cfile} is used. Useful to use with:\n";
+    print STDERR "\t# --capture, --learn\n\n";
+    print STDERR "--cache-file [cache-file]\n";
+   	print STDERR "\t# Determines where a $arg->{name} server will store\n";
+   	print STDERR "\t# cached traffic. If option or [cache-file] is omitted,\n";
+   	print STDERR "\t# $arg->{cache_file} is used. Useful to use with:\n";
+   	print STDERR "\t# --monitor (--server)\n\n";
+   	print STDERR "--cache-key-dst\n";
+    print STDERR "\t# Causes a $arg->{name} server to use 'destination:port'\n";
+    print STDERR "\t# as the cache key instead of the default cache key of\n";
+    print STDERR "\t# 'source:port > destination:port'. It can be useful when\n";
+    print STDERR "\t# you want to keep track of 'true' source to destination\n"; 
+    print STDERR "\t# packets (e.g., notification messages). Useful to use with:\n";
+    print STDERR "\t# --monitor (--server)\n\n";
+    print STDERR "-d, --daemon\n";
+    print STDERR "\t# Forces a $arg->{name} server or client to start up as a\n";
+    print STDERR "\t# daemon, when monitoring. Useful to use with:\n";
+    print STDERR "\t# --monitor\n\n";
+	print STDERR "-i, --interface <device>\n";
     print STDERR "\t# Uses <device> to listen for traffic. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
+    print STDERR "-lf, --learn-file [lfile]\n"; 
+    print STDERR "\t# Learned traffic will be stored in [lfile] (learn mode)\n";
+    print STDERR "\t# or used to load learned traffic in order for a\n";
+    print STDERR "\t# $arg->{name} client to compare captures against. If\n";
+    print STDERR "\t# option or [lfile] is omitted, then $arg->{lfile} is\n";
+    print STDERR "\t# used. Useful to use with:\n";
+    print STDERR "\t# --learn, --monitor (--client)\n\n";
+    print STDERR "--log=<server | client> [file]\n";
+    print STDERR "\t# Tells $arg->{name} what log to use, when in monitor\n";
+    print STDERR "\t# mode. If [file] is omitted, $arg->{name} will use:\n";
+    print STDERR "\t# $arg->{log_server} and $arg->{log_client}, respectively.\n";
+    print STDERR "\t# Useful to use with:\n";
+    print STDERR "\t# --monitor\n\n";
+    print STDERR "-n, --notify [<smtp-host>=<alias [,...]>] | [out=<file>]\n";
+    print STDERR "\t# Tells $arg->{name} to create a notification message. If\n";
+    print STDERR "\t# <file> is omitted, $arg->{notify_file} is used. If\n";
+    print STDERR "\t# emailing, then the $arg->{name} server will send\n";
+    print STDERR "\t# notifications to <alias>, using <smtp-host>. This\n";
+    print STDERR "\t# option is used by a $arg->{name} server and triggered\n";
+    print STDERR "\t# by a USR1 signal or if <count> is reached (see\n";
+    print STDERR "\t# --packet-count). Useful to use with:\n";
+    print STDERR "\t# --monitor (--server)\n\n";
+    print STDERR "-nc, --no-comment\n";
+    print STDERR "\t# Suppresses user comments when learning. Useful to use with:\n";
+    print STDERR "\t# --learn\n\n";
+    print STDERR "-nr, --no-reverse\n";
+    print STDERR "\t# Do not create rules for inverse traffic when learning. Useful\n";
+    print STDERR "\t# to use with:\n";
+    print STDERR "\t# --learn\n\n";
+    print STDERR "-p, --promiscuous\n";
+    print STDERR "\t# Places device into promiscuous mode before capturing. Useful\n";
+    print STDERR "\t# to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
+    print STDERR "-pc, --packet-count <count>\n";
+    print STDERR "\t# Capture <count> packets or until an interrupt signal is\n";
+    print STDERR "\t# received. A count of 0 is equal to omitting this option.\n";
+    print STDERR "\t# In --server mode, <count> signals when to dump and\n";
+    print STDERR "\t# refresh the server's cache. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor\n\n";
+    print STDERR "-pd, --packet-detail <count>\n";
+    print STDERR "\t# Output the captured packet length, total packet length,\n";
+    print STDERR "\t# the seconds value of the packet timestamp, the microseconds\n";
+    print STDERR "\t# value of the packet timestamp. This option is ignored if not\n";
+    print STDERR "\t# outputting packets to stdout (see: --stdout). Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
+    print STDERR "-re, --regex <expression [,...]>\n";
+    print STDERR "\t# Returns captures matching <expression>. Note, this\n";
+    print STDERR "\t# feature can cause performance issues. Use with\n";
+    print STDERR "\t# caution. Useful to use with:\n";
     print STDERR "\t# --capture, --monitor (--client)\n\n";
     print STDERR "-S, --snaplen <bytes>\n";
     print STDERR "\t# Specifies the maximum number of bytes to capture from\n";
     print STDERR "\t# each packet. Must be in the range of 38-65535. If not\n";
     print STDERR "\t# specified, the default of 64 bytes is used. Useful to use\n";
     print STDERR "\t# with: --capture, --monitor (--client)\n\n";
+    print STDERR "-s, --stdout\n";
+    print STDERR "\t# Traffic is also sent to stdout if possible. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor\n\n";
+    print STDERR "--sort-cache-date\n";
+    print STDERR "\t# Prior to refreshing a server's cache or notifying, the\n";
+    print STDERR "\t# $arg->{name} server will sort by the packet date first\n";
+    print STDERR "\t# seen. Useful to use with:\n";
+    print STDERR "\t# --monitor (--server)\n\n";
     print STDERR "-rt, --read-timeout <ms>\n";
     print STDERR "\t# Specifies a read timeout in milliseconds. The read timeout\n";
     print STDERR "\t# is used to arrange that the read not necessarily return\n";
@@ -3918,81 +4003,11 @@ sub usage
     print STDERR "\t# specified, the read timeout will default to 5 milliseconds\n";
     print STDERR "\t# (or .005 seconds). Useful to use with:\n";
     print STDERR "\t# --capture, --monitor (--client)\n\n";
-    print STDERR "-p, --promiscuous\n";
-    print STDERR "\t# Places device into promiscuous mode before capturing. Useful\n";
-    print STDERR "\t# to use with:\n";
-    print STDERR "\t# --capture, --monitor (--client)\n\n";
-    print STDERR "-pc, --packet-count <count>\n";
-    print STDERR "\t# Capture <count> packets or until an interrupt signal is\n";
-    print STDERR "\t# received. A count of 0 is equal to omitting this option.\n";
-    print STDERR "\t# In --server mode, <count> signals when to dump and\n";
-    print STDERR "\t# refresh the server's cache. Useful to use with:\n";
-    print STDERR "\t# --capture, --monitor\n\n";
     print STDERR "-u, --unique\n"; 
     print STDERR "\t# Will only return unique traffic when capturing. Useful to use\n";
     print STDERR "\t# with:\n";
     print STDERR "\t# --capture, --monitor (--client)\n\n";
-    print STDERR "-cf, --capture-file [cfile]\n";
-    print STDERR "\t# Where $arg->{name} will write (capture mode) or read\n";
-    print STDERR "\t# (learn mode) captures. If option or [cfile] is omitted\n"; 
-    print STDERR "\t# $arg->{cfile} is used. Useful to use with:\n";
-    print STDERR "\t# --capture, --learn\n\n";
-    print STDERR "-lf, --learn-file [lfile]\n"; 
-    print STDERR "\t# Learned traffic will be stored in [lfile] (learn mode)\n";
-    print STDERR "\t# or used to load learned traffic in order for a\n";
-    print STDERR "\t# $arg->{name} client to compare captures against. If\n";
-    print STDERR "\t# option or [lfile] is omitted, then $arg->{lfile} is\n";
-    print STDERR "\t# used. Useful to use with:\n";
-    print STDERR "\t# --learn, --monitor (--client)\n\n";
-    print STDERR "-nc, --no-comment\n";
-    print STDERR "\t# Suppresses user comments when learning. Useful to use with:\n";
-    print STDERR "\t# --learn\n\n"; 
-    print STDERR "-nr, --no-reverse\n";
-    print STDERR "\t# Do not create rules for inverse traffic when learning. Useful\n";
-    print STDERR "\t# to use with:\n";
-    print STDERR "\t# --learn\n\n";
-    print STDERR "-re, --regex <expression [,...]>\n";
-    print STDERR "\t# Returns captures matching <expression>. Note, this\n";
-    print STDERR "\t# feature can cause performance issues. Use with\n";
-    print STDERR "\t# caution. Useful to use with:\n";
-    print STDERR "\t# --capture, --monitor (--client)\n\n";
-    print STDERR "-n, --notify [<smtp-host>=<alias [,...]>] | [out=<file>]\n";
-    print STDERR "\t# Tells $arg->{name} to create a notification message. If\n";
-    print STDERR "\t# <file> is omitted, $arg->{notify_file} is used. If\n";
-    print STDERR "\t# emailing, then the $arg->{name} server will send\n";
-    print STDERR "\t# notifications to <alias>, using <smtp-host>. This\n";
-    print STDERR "\t# option is used by a $arg->{name} server and triggered\n";
-    print STDERR "\t# by a USR1 signal or if <count> is reached (see\n";
-    print STDERR "\t# --packet-count). Useful to use with:\n";
-    print STDERR "\t# --monitor (--server)\n\n";
-   	print STDERR "--cache-file [cache-file]\n";
-   	print STDERR "\t# Determines where a $arg->{name} server will store\n";
-   	print STDERR "\t# cached traffic. If option or [cache-file] is omitted,\n";
-   	print STDERR "\t# $arg->{cache_file} is used. Useful to use with:\n";
-   	print STDERR "\t# --monitor (--server)\n\n";
-    print STDERR "--sort-cache-date\n";
-    print STDERR "\t# Prior to refreshing a server's cache or notifying, the\n";
-    print STDERR "\t# $arg->{name} server will sort by the packet date first\n";
-    print STDERR "\t# seen. Useful to use with:\n";
-    print STDERR "\t# --monitor (--server)\n\n";
-    print STDERR "--cache-key-dst\n";
-    print STDERR "\t# Causes a $arg->{name} server to use 'destination:port'\n";
-    print STDERR "\t# as the cache key instead of the default cache key of\n";
-    print STDERR "\t# 'source:port > destination:port'. It can be useful when\n";
-    print STDERR "\t# you want to keep track of 'true' source to destination\n"; 
-    print STDERR "\t# packets (e.g., notification messages). Useful to use with:\n";
-    print STDERR "\t# --monitor (--server)\n\n";
-    print STDERR "--log=<server | client> [file]\n";
-    print STDERR "\t# Tells $arg->{name} what log to use, when in monitor\n";
-    print STDERR "\t# mode. If [file] is omitted, $arg->{name} will use:\n";
-    print STDERR "\t# $arg->{log_server} and $arg->{log_client}, respectively.\n";
-    print STDERR "\t# Useful to use with:\n";
-    print STDERR "\t# --monitor\n\n";
-    print STDERR "-d, --daemon\n";
-    print STDERR "\t# Forces a $arg->{name} server or client to start up as a\n";
-    print STDERR "\t# daemon, when monitoring. Useful to use with:\n";
-    print STDERR "\t# --monitor\n\n";
-    print STDERR "\n[Note]:\n";
+	print STDERR "\n[Note]:\n";
     print STDERR "--> Sufficient permissions (e.g., root) may be required for:\n";
     print STDERR "\t-li, --list-interfaces\n";
     print STDERR "\t-c, --capture\n";
