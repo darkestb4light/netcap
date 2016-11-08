@@ -62,7 +62,7 @@ use IO::Socket;
 use MIME::Lite;
 use Net::CIDR;
 use Net::Pcap;
-use NetPacket::Ethernet qw(:types);
+use NetPacket::Ethernet qw(:ALL);
 use NetPacket::IP qw(:ALL);
 use NetPacket::TCP;
 use NetPacket::UDP;
