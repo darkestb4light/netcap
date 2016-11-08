@@ -176,19 +176,40 @@ netcap (pid: 45036) continuing with capturing traffic.
 If there are more packets to capture from --packet-count or you omitted 
 the option, netcap will go back to listening for packets.
 
+If desired, you can choose to have netcap output more verbose packet detail. This is accomplished by specifying -pd or --packet-detail, when capturing. This 
+will cause netcap to output more packet detail such as:
+
+o The packet capture length actually captured
+o Total packet length available
+o The seconds value of the packet timestamp
+o The microseconds value of the packet timestamp
+o The transport protocol used for the packet
+o The flags set in the packet transport protocol (if any)
+o The bit sequence of set in the packet transport protocol (if any)
+
+Example:
+...
+192.168.0.45:64099 > 172.20.25.18:443|62:62:1478572176:577471|tcp:SYN:2
+192.168.0.2:1048 > 239.255.255.250:8082|64:1514:1478572176:873878|udp:none:195
+192.168.0.2:8291 > 239.255.255.250:29757|64:1162:1478572176:885485|tcp:none:48
+192.168.0.11:1053 > 239.255.255.250:8082|64:505:1478572178:479122|udp:none:195
+132.245.51.2:443 > 192.168.0.45:64094|64:1184:1478572180:733472|tcp:PSH/ACK:24
+192.168.0.45:64094 > 132.245.51.2:443|64:66:1478572180:733607|tcp:ACK:16
+
 Useful commands/options when capturing are:
 
--li, --list-interfaces
 -C, --Config
+-cf, --capture-file
 -s, --stdout	
 -i, --interface
--S, --snaplen
--rt, --read-timeout
+-li, --list-interfaces
 -p --promiscuous
 -pc, --packet-count
--u, --unique
--cf, --capture-file
+-pd, --packet-detail
+-S, --snaplen
 -re, --regex
+-rt, --read-timeout
+-u, --unique
 
 A sample of capturing with netcap might look like the following:
 

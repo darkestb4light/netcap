@@ -22,22 +22,25 @@ If you wish to keep it simple, complete steps:
 of where netcap resides)
 	
 	
+1. Copy netcap archive to the desired server(s) for installation.
 
-1. Copy netcap-<version>.tar.gz to desired server(s) for installation.
+IMPORTANT: 
+The latest netcap archive can be downloaded from https://github.com/darkestb4light/netcap (netcap-master.zip) or by cloning 
+https://github.com/darkestb4light/netcap.git.
 
 Note: Within netcap-<version>.tar.gz, the following structure exists:
 
 - bin/
-	nc-archive		<-- Archives server cache/notify files 
-	nc-refresh-client	<-- Client reloads learned rules 
-	nc-refresh-server	<-- Server dumps cache/notify message
-	nc-start-client		<-- Client script to automate starting
+	nc-archive				<-- Archives server cache/notify files 
+	nc-refresh-client		<-- Client reloads learned rules 
+	nc-refresh-server		<-- Server dumps cache/notify message
+	nc-start-client			<-- Client script to automate starting
 	nc-start-client-onload	<-- Client script for starting on boot (OSX)
-	nc-start-server		<-- Server script to automate starting
+	nc-start-server			<-- Server script to automate starting
 	nc-start-server-onload	<-- Server script for starting on boot (OSX)
-	nc-stop-client		<-- Client script to automate stopping
-	nc-stop-server		<-- Server script to automate stopping
-	netcap			<-- Main program
+	nc-stop-client			<-- Client script to automate stopping
+	nc-stop-server			<-- Server script to automate stopping
+	netcap					<-- Main program
 - dependencies/
 	/io-socket/
 		IO-1.25.tar.gz
@@ -57,12 +60,12 @@ Note: Within netcap-<version>.tar.gz, the following structure exists:
 	/time-local/
 		Time-Local-1.1901.tar.gz
 - doc/
-	INSTALL.txt		<-- Installation guide
-	LICENSE.txt		<-- License file for this project
-	netcap.md5		<-- Contains this version's MD5 hash
+	INSTALL.txt			<-- Installation guide
+	LICENSE.txt			<-- License file for this project
+	netcap.md5			<-- Contains this version's MD5 hash
 	README-FREEBSD.txt	<-- Guide for starting netcap at boot (FREEBSD)
 	README-OSX.txt		<-- Guide for starting netcap at boot (OSX)
-	README.txt		<-- Overview and other information
+	README.txt			<-- Overview and other information
 - etc/
 	netcap-client.plist	<-- Client script for starting on boot (OSX)
 	netcap-server.plist	<-- Server script for starting on boot (OSX)
