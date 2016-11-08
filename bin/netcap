@@ -446,6 +446,8 @@ sub main
 					if($arg{do_unique});
 				die "Promiscuous option not necessary when creating a monitoring server.\n"
 					if($arg{promiscuous});
+				die "Packet detail option not necessary when creating a monitoring server.\n"
+					if($arg{do_packet_detail});
 				daemonize(\$env{pid}, $arg{error_file}) if($arg{do_daemon});
 				monitor_server(\%arg, $env{pid});
 				print STDERR "$arg{name} (server pid: $env{pid}) has finished monitoring.\n"
@@ -778,10 +780,18 @@ sub capture
 			last;
 		}else{
 			if($arg->{do_unique}){
-				print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				if($arg->{do_packet_detail}){
+					print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				}else{
+					print "$traffic\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				}
 				$data{$traffic}++;
 			}else{
-				print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout});
+				if($arg->{do_packet_detail}){
+					print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				}else{
+					print "$traffic\n" if($arg->{do_stdout});
+				}
 				$data{$packet_count} = $traffic;
 			}
 		}
@@ -2782,7 +2792,7 @@ sub monitor_server
 		}
 		$date = localtime();
 		chomp($packet);
-		($packet, $record_id, $hdr, $tcp_flag) = split(/\|/, $packet);
+		($arg->{do_packet_detail}, $packet, $record_id, $hdr, $tcp_flag) = split(/\|/, $packet);
 		$seen = build_cache($packet, \%packet_data, $date, $record_id, $arg->{do_cache_key_dst}, 
 					\$src, \$dst);
 		if(! $seen){
@@ -2791,22 +2801,42 @@ sub monitor_server
 				$log_msg = "Client Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
 				if($arg->{do_cache_key_dst}){
 					my $peer = $socket->peerhost.":".$socket->peerport;
-					$log_msg .= "$peer|$protocol|$src > $dst|$record_id|$hdr|$tcp_flag\n";
+					if($arg->{do_packet_detail}){
+						$log_msg .= "$peer|$protocol|$src > $dst|$record_id|$hdr|$tcp_flag\n";
+					}else{
+						$log_msg .= "$peer|$protocol|$src > $dst|$record_id\n";
+					}
 				}else{
-					$log_msg .= "$peer|$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
+					if($arg->{do_packet_detail}){
+						$log_msg .= "$peer|$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
+					}else{
+						$log_msg .= "$peer|$protocol|$packet|$record_id\n";
+					}
 				}
 				log_message($log_msg, $arg->{log_server});
 			}
 			if($arg->{do_stdout}){
 				if($arg->{do_cache_key_dst}){
 					$packet = "$src > $dst";
-					printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s|%s|%s\n", $date, $arg->{name}, 
-						$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
-						$protocol, $packet, $record_id, $hdr, $tcp_flag);
+					if($arg->{do_packet_detail}){
+						printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s|%s|%s\n", $date, $arg->{name}, 
+							$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
+							$protocol, $packet, $record_id, $hdr, $tcp_flag);
+					}else{
+						printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, $arg->{name}, 
+							$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
+							$protocol, $packet, $record_id);
+					}
 				}else{
-					printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s|%s|%s\n", $date, $arg->{name}, 
-						$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
-						$protocol, $packet, $record_id, $hdr, $tcp_flag);
+					if($arg->{do_packet_detail}){
+						printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s|%s|%s\n", $date, $arg->{name}, 
+							$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
+							$protocol, $packet, $record_id, $hdr, $tcp_flag);
+					}else{
+						printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, $arg->{name}, 
+							$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
+							$protocol, $packet, $record_id);
+					}
 				}
 			}
 			if($arg->{packet_count} > 0){
@@ -3199,34 +3229,64 @@ sub monitor_client
 			if($arg->{do_unique}){
 				if(! exists($data{$packet})){
 					if($arg->{do_stdout}){
-						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s|%s\n", $date, 
-								$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
-								$protocol, $packet, $record_id, $hdr, $tcp_flag);
+						if($arg->{do_packet_detail}){
+							printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s|%s\n", $date, 
+									$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+									$protocol, $packet, $record_id, $hdr, $tcp_flag);
+						}else{
+							printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s\n", $date, 
+									$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+									$protocol, $packet, $record_id);
+						}
 					}
 					if($arg->{do_log}){
 						$date = localtime();
 						$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-						$log_msg .= "$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
+						if($arg->{do_packet_detail}){
+							$log_msg .= "$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
+						}else{
+							$log_msg .= "$protocol|$packet|$record_id\n";
+						}
 						log_message($log_msg, $arg->{log_client});
 					}
 				}
-				$socket->send("$packet|$record_id|$hdr|$tcp_flag") or die("$!: $arg->{name} (pid: $pid) unable ", 
-														"to send to $arg->{host}:$arg->{port}\n");
+				if($arg->{do_packet_detail}){
+					$socket->send("$arg->{do_packet_detail}|$packet|$record_id|$hdr|$tcp_flag") 
+						or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
+				}else{
+					$socket->send("$arg->{do_packet_detail}|$packet|$record_id") 
+						or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
+				}
 				$data{$packet}++;
 			}else{
 				if($arg->{do_stdout}){
-					printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s|%s\n", $date, 
-						$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
-						$protocol, $packet, $record_id, $hdr, $tcp_flag);
+					if($arg->{do_packet_detail}){
+						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s|%s\n", $date, 
+								$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+								$protocol, $packet, $record_id, $hdr, $tcp_flag);
+					}else{
+						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s\n", $date, 
+								$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+								$protocol, $packet, $record_id);
+					}
 				}
 				if($arg->{do_log}){
 					$date = localtime();
 					$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-					$log_msg .= "$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
+					if($arg->{do_packet_detail}){
+						$log_msg .= "$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
+					}else{
+						$log_msg .= "$protocol|$packet|$record_id\n";
+					}
 					log_message($log_msg, $arg->{log_client});
 				}
-				$socket->send("$packet|$record_id") or die("$!: $arg->{name} (pid: $pid) unable ", 
-														"to send to $arg->{host}:$arg->{port}\n");
+				if($arg->{do_packet_detail}){
+					$socket->send("$packet|$record_id|$hdr|$tcp_flag") 
+						or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
+				}else{
+					$socket->send("$packet|$record_id") 
+						or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
+				}
 				$data{$packet_count} = $packet;
 			}
 		}
@@ -3890,12 +3950,9 @@ sub usage
 	print STDERR "\t# IP within the 192.168.0.0/16 (192.168.0.10) where HTTP/S\n";
 	print STDERR "\t# traffic matches a rule being considered:\n";
 	print STDERR "\t# \"192.168.0.10:80\" \"192.168.0.0/16:80|443\"\n\n";
-	
-
     print STDERR "-v, --version\n";
     print STDERR "\t# Display the $arg->{name} version and exit.\n\n";
    
-    
     #options
     print STDERR "\n\t[Options]:\n\n";
     print STDERR "-C, --Config [config-file]\n"; 
@@ -3967,8 +4024,8 @@ sub usage
     print STDERR "\t# In --server mode, <count> signals when to dump and\n";
     print STDERR "\t# refresh the server's cache. Useful to use with:\n";
     print STDERR "\t# --capture, --monitor\n\n";
-    print STDERR "-pd, --packet-detail <count>\n";
-    print STDERR "\t# Output the captured packet length, total packet length,\n";
+    print STDERR "-pd, --packet-detail\n";
+    print STDERR "\t# Output the actual captured packet length, total packet length,\n";
     print STDERR "\t# the seconds value of the packet timestamp, the microseconds\n";
     print STDERR "\t# value of the packet timestamp. This option is ignored if not\n";
     print STDERR "\t# outputting packets to stdout (see: --stdout). Useful to use with:\n";
