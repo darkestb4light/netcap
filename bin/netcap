@@ -92,43 +92,46 @@ sub main
 					do_capture 			=> 0,
 					do_stdout			=> 0,
 					interface			=> undef,
-					snaplen				=> 64,
-					read_timeout		=> 5,
-					promiscuous			=> 0,
-					packet_count 		=> undef,
-					cfile				=> undef,
-					do_unique			=> 0,
-					do_regex_cap		=> 0,
-					regex_cap			=> undef,
-					regex_capall		=> undef,
-					do_learn 			=> 0,
-					do_comment			=> 1,
-					do_reverse_rule		=> 1,	
-					lfile				=> undef,
-					review_file			=> undef,
-					do_monitor			=> 0,
-					do_daemon			=> 0,
-					monitor_server		=> 0,
-					monitor_client		=> 0,
-					host				=> undef,
-					port				=> -1,
-					cache_file			=> undef,
-					sort_cache_date		=> 0,
-					do_cache_key_dst	=> 0,
-					do_notify			=> 0,
-					notify_file			=> undef,
-					notify_server		=> undef,
-					notify_mail			=> undef,
-					do_log				=> 0,
-					log_server			=> undef,
-					log_client			=> undef,
-					do_sort_learn		=> 0,
-					error_file			=> undef,
-					do_testre			=> 0,
-					testre_pattern		=> undef,
-					testre_expression	=> undef,
-					config_file			=> undef,
-					do_packet_detail	=> 0
+					snaplen					=> 64,
+					read_timeout			=> 5,
+					promiscuous				=> 0,
+					packet_count 			=> undef,
+					cfile					=> undef,
+					do_unique				=> 0,
+					do_regex_cap			=> 0,
+					regex_cap				=> undef,
+					regex_capall			=> undef,
+					do_learn 				=> 0,
+					do_comment				=> 1,
+					do_reverse_rule			=> 1,	
+					lfile					=> undef,
+					review_file				=> undef,
+					do_monitor				=> 0,
+					do_daemon				=> 0,
+					monitor_server			=> 0,
+					monitor_client			=> 0,
+					host					=> undef,
+					port					=> -1,
+					cache_file				=> undef,
+					sort_cache_date			=> 0,
+					do_cache_key_dst		=> 0,
+					do_notify				=> 0,
+					notify_file				=> undef,
+					notify_server			=> undef,
+					notify_mail				=> undef,
+					do_log					=> 0,
+					log_server				=> undef,
+					log_client				=> undef,
+					do_sort_learn			=> 0,
+					error_file				=> undef,
+					do_testre				=> 0,
+					testre_pattern			=> undef,
+					testre_expression		=> undef,
+					config_file				=> undef,
+					do_packet_detail		=> 0,
+					do_compile_filter		=> 0,
+					compile_filter			=> undef,
+					compile_filter_optimize	=> 1
 				);
 	my %learned = 	(
 						record_id		=> 0,
@@ -217,6 +220,22 @@ sub main
     		}else{
     			die "Option requires a valid regular expression.\n";
     		}
+    	}elsif($ARGV[$i] =~ m/^--compile-filter$/){
+    		$arg{compile_filter} = $ARGV[++$i];
+    		die "Compile filter expression required.\n" 
+    			unless(length($arg{compile_filter}) > 0);
+    		if(defined($ARGV[$i+1]) && $ARGV[$i+1] !~ m/^-{1,2}.*?$/){
+    			$ARGV[++$i];
+    			if($ARGV[$i] =~ m/^optimize=(true|1)$/i){
+    				$arg{compile_filter_optimize} = 1;
+    			}elsif($ARGV[$i] =~ m/^optimize=(false|0)$/i){
+    					$arg{compile_filter_optimize} = 0;
+    			}else{
+    				print STDERR "Option parameter format invalid. Option requires filter; ";
+    				die "if using the\noptimization parameter, it must be true (1) or false (0).\n";
+    			}
+    		}
+    		$arg{do_compile_filter} = 1;
     	}elsif($ARGV[$i] =~ m/^--cache-file$/){
     		if(defined($ARGV[$i+1]) && ($ARGV[$i+1] =~ m/.*?\w+.*?$/)){
     			$arg{cache_file} = $ARGV[++$i];
@@ -403,7 +422,13 @@ sub main
 			}else{
 				print STDERR "|--> suppress traffic from stdout stream\n";
 			}
-			print STDERR "|--> ensure traffic matches: \"$arg{regex_cap}\"\n" if($arg{do_regex_cap});
+			print STDERR "|--> ensure traffic matches: \"$arg{regex_cap}\" (regex filter)\n" 
+				if($arg{do_regex_cap});
+			if($arg{do_compile_filter}){
+				print STDERR "|--> ensure traffic matches: \"$arg{compile_filter}\" (compile filter)\n";
+				my $optimize = ($arg{compile_filter_optimize}) ? "invoke" : "avoid";
+				print STDERR "|--> $optimize optimization of compiled filter\n";
+			}
 			if($arg{promiscuous}){
 				print STDERR "|--> listen in promiscuous mode\n";
 			}else{
@@ -448,6 +473,8 @@ sub main
 					if($arg{promiscuous});
 				die "Packet detail option not necessary when creating a monitoring server.\n"
 					if($arg{do_packet_detail});
+				die "Compile filter option not necessary when creating a monitoring server.\n"
+					if($arg{do_compile_filter});
 				daemonize(\$env{pid}, $arg{error_file}) if($arg{do_daemon});
 				monitor_server(\%arg, $env{pid});
 				print STDERR "$arg{name} (server pid: $env{pid}) has finished monitoring.\n"
@@ -475,7 +502,7 @@ sub main
 								"see: $arg{name} --help for assistance on specifying an existing ",
 								"learn file.\n");
 						}elsif($choice =~ m/^y(es)?/i){
-							print STDERR "\nOkay - Will continue with starting client monitor.\n";
+							print STDERR "\nOkay - Will continue with starting client monitor.\n\n";
 							last;
 						}
 					} 
@@ -634,27 +661,32 @@ sub lookup_cidr_range
 #   create_device
 # Pre:
 #	$ 	= scalar representing the interface (device) to listen on
+#	\$	= reference to a scalar representing an interface's netmask
 #	$	= scalar representing the number of bytes to read from the captured 
 #		packet
 #	$ 	= scalar representing whether or not to put the device into 
 #		promiscuous mode
 #	$	= scalar representing the read timeout in milliseconds
+#	\$	= reference to a scalar representing a packet capture object
 # Post:
-#	Returns packet capture descriptor or dies on error
+#	Returns a reference to packet capture descriptor or dies on error
 sub create_device
 {
-	my ($interface, $snaplen, $promiscuous, $read_timeout) = @_;
-	my $pcap;
+	my ($interface, $netmask, $snaplen, $promiscuous, $read_timeout, $pcap) = @_;
+	my $device;
+	my $address;
 	my $error;
 
-	$pcap = Net::Pcap::open_live($interface, $snaplen, $promiscuous, 
+	Net::Pcap::lookupnet($interface, \$address, $netmask, \$error);
+	
+	$device = Net::Pcap::open_live($interface, $snaplen, $promiscuous, 
 		$read_timeout, \$error);
 		
-	unless(defined($pcap)){
+	unless(defined($device)){
     	die "failed. $error\n";
 	}
 	
-	return $pcap;
+	$$pcap = $device; 
 }
 # Name:
 #   capture
@@ -682,6 +714,8 @@ sub capture
 	my ($arg, $pid) = @_;
 	my $match;
 	my $pcap;
+	my $filter;
+	my $netmask;
 	my $total_net_packets = 0;
 	my $total_ip_packets = 0;
 	my $packet_count = 0;
@@ -715,6 +749,7 @@ sub capture
 		print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
 		print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
 		write_capture_data($arg->{cfile}, \%data, $arg->{do_unique}) if($packet_count > 0);
+		free_capture_filter($filter) if($arg->{do_compile_filter} && defined($filter));
 		Net::Pcap::close($pcap);
 		print STDERR "$arg->{name} (pid: $pid) has finished capturing traffic.\n";
 		exit(0);
@@ -728,6 +763,7 @@ sub capture
 		print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
 		print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
 		write_capture_data($arg->{cfile}, \%data, $arg->{do_unique}) if($packet_count > 0);
+		free_capture_filter($filter) if($arg->{do_compile_filter} && defined($filter));
 		Net::Pcap::close($pcap);
 		print STDERR "$arg->{name} (pid: $pid) has finished capturing traffic.\n";
 		exit(0);
@@ -739,8 +775,8 @@ sub capture
 	print STDERR "|--> Capturing $arg->{snaplen} byte(s)/packet...\n";
 	print STDERR "|--> Read timeout of $arg->{read_timeout} millisecond(s)\n";
 	print STDERR "|--> Binding to interface: $arg->{interface}... ";
-	$pcap = create_device($arg->{interface}, $arg->{snaplen}, $arg->{promiscuous}, 
-		$arg->{read_timeout});
+	create_device($arg->{interface}, \$netmask, $arg->{snaplen}, 
+		$arg->{promiscuous}, $arg->{read_timeout}, \$pcap);
 	print STDERR "success.\n";
 	
 	#capturing
@@ -757,6 +793,10 @@ sub capture
 	
 	for(;;)
 	{
+		if($arg->{do_compile_filter}){
+			$filter = build_capture_filter($pcap, $arg->{compile_filter}, 
+				$arg->{compile_filter_optimize}, $netmask);
+		}
 		get_capture_packet($pcap, \$packet, \$traffic, \$total_net_packets, 
 			\$total_ip_packets, \$hdr, \$tcp_flag);
 		next if($traffic == 0);
@@ -798,6 +838,48 @@ sub capture
 		$packet_count++;
 	}
 	print STDERR "$arg->{name} has finished capturing traffic.\n";
+	
+	free_capture_filter($filter) if($arg->{do_compile_filter} && defined($filter));
+}
+# Name:
+#   build_capture_filter
+# Pre:
+#	$ 	= scalar representing the created capture descriptor
+#	$	= scalar representing the filter to compile
+#	$	= scalar representing whether to optimize the filter 
+#		(1 = true; 0 = false)
+#	$	= scalar representing the interface's (device) netmask
+# Post:
+#	Capture filter compiled/set or dies on error
+sub build_capture_filter
+{
+	my ($pcap, $str, $optimize, $netmask) = @_;
+	my $filter;
+	my $result;
+	
+	$result = Net::Pcap::pcap_compile($pcap, \$filter, $str, $optimize, $netmask);
+	
+	die "Unable to compile filter: \"$str\" $!\n" if($result == -1);
+	
+	Net::Pcap::pcap_setfilter($pcap, $filter);
+	
+	die "Unable to set filter: \"$str\"\n" unless(defined($filter));
+	
+	return $filter;
+	
+}
+# Name:
+#   free_capture_filter
+# Pre:
+#	$ 	= scalar representing a previously compiled capture filter
+# Post:
+#	Memory freed
+sub free_capture_filter
+{
+	my ($filter) = @_;
+	
+	Net::Pcap::pcap_freecode($filter);
+	
 }
 # Name:
 #   get_capture_packet
@@ -2999,6 +3081,8 @@ sub monitor_client
 	my $total_learned = 0;
 	my $socket;
 	my $pcap;
+	my $filter;
+	my $netmask;
 	my $raw_packet; 
 	my $packet;
 	my $tcp_flag;
@@ -3055,6 +3139,8 @@ sub monitor_client
 			print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
 			print STDERR "$arg->{name} (client pid: $pid) has finished monitoring.\n";
 		}
+		free_capture_filter($filter) if($arg->{do_compile_filter} && defined($filter));
+		Net::Pcap::close($pcap);
 		exit(0);
 	};
 	
@@ -3082,6 +3168,8 @@ sub monitor_client
 			print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
 			print STDERR "$arg->{name} (client pid: $pid) has finished monitoring.\n";
 		}
+		free_capture_filter($filter) if($arg->{do_compile_filter} && defined($filter));
+		Net::Pcap::close($pcap);
 		exit(0);
 	};
 
@@ -3114,8 +3202,10 @@ sub monitor_client
 			$log_msg .= "Binding to interface: $arg->{interface}\n";
 			log_message($log_msg, $arg->{log_client});
 	}
-	$pcap = create_device($arg->{interface}, $arg->{snaplen}, $arg->{promiscuous}, 
-		$arg->{read_timeout});
+	
+	create_device($arg->{interface}, \$netmask, $arg->{snaplen}, $arg->{promiscuous}, 
+		$arg->{read_timeout}, \$pcap);
+	
 	printf("Listening (promiscuous mode = %s)...\n", ($arg->{promiscuous}) ? "Yes": "No")
 		if($arg->{do_stdout});
 	
@@ -3194,6 +3284,10 @@ sub monitor_client
 			}
 			$usr_sig = 0;
 		}
+		if($arg->{do_compile_filter}){
+			$filter = build_capture_filter($pcap, $arg->{compile_filter}, 
+				$arg->{compile_filter_optimize}, $netmask);
+		}
 		get_capture_packet($pcap, \$raw_packet, \$packet, \$total_net_packets, 
 				\$total_ip_packets, \$hdr, \$tcp_flag);
 		next if($packet == 0);
@@ -3219,7 +3313,7 @@ sub monitor_client
 				log_message($log_msg, $arg->{log_client});
 			}
 			if(($arg->{do_stdout}) && (! $arg->{do_daemon})){
-				print "Packet limit of $packet_max reached. Wrapping up...\n";
+				print "\nPacket limit of $packet_max reached. Wrapping up...\n";
 				print "\nTotal packets:\n";
 				print STDERR "Network: $total_net_packets\tIP: $total_ip_packets\n";
 				print STDERR "Requested: $packet_max\tCaptured: $packet_count\nUnique: $ucount\n\n";
@@ -3978,6 +4072,20 @@ sub usage
     print STDERR "\t# you want to keep track of 'true' source to destination\n"; 
     print STDERR "\t# packets (e.g., notification messages). Useful to use with:\n";
     print STDERR "\t# --monitor (--server)\n\n";
+    print STDERR "--compile-filter <filter> [optimize=true|false]\n";
+    print STDERR "\t# Attempts to compile <filter> and return packets that match.\n";
+    print STDERR "\t# If optimize is set to true (or 1), $arg->{name} attempts to\n";
+    print STDERR "\t# optimize <filter> (this is the default). To turn this off,\n";
+    print STDERR "\t# set optimize to false (or 0). This option can be used with or\n";
+    print STDERR "\t# without --regex if desired. The power of this option is that\n";
+    print STDERR "\t# it can go beyond that of --regex. For example, if you wanted to\n";
+    print STDERR "\t# filter for www.foobar.com and return packets with the SYN bit set,\n";
+    print STDERR "\t# or perhaps you are interested in data packets, you could do:\n";
+    print STDERR "\t# -> \"(host www.foobar.com) && (tcp[13] & 2 != 0)\"\n";
+    print STDERR "\t# -> \"(host www.foobar.com) && (tcp[tcpflags] & (tcp-push) != 0)\"\n";
+    print STDERR "\t# For more information, see pcap-filter(7). This feature can cause\n";
+    print STDERR "\t# performance issues. Use with caution. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
     print STDERR "-d, --daemon\n";
     print STDERR "\t# Forces a $arg->{name} server or client to start up as a\n";
     print STDERR "\t# daemon, when monitoring. Useful to use with:\n";
@@ -4031,9 +4139,12 @@ sub usage
     print STDERR "\t# outputting packets to stdout (see: --stdout). Useful to use with:\n";
     print STDERR "\t# --capture, --monitor (--client)\n\n";
     print STDERR "-re, --regex <expression [,...]>\n";
-    print STDERR "\t# Returns captures matching <expression>. Note, this\n";
-    print STDERR "\t# feature can cause performance issues. Use with\n";
-    print STDERR "\t# caution. Useful to use with:\n";
+    print STDERR "\t# Returns captures matching <expression>. Note: <expression> is\n";
+    print STDERR "\t# only currently valid for matching a packet in the form of:\n";
+    print STDERR "\t# \"IPv4-src-addr:port > IPv4-dst-addr:port\" as in the following\n";
+    print STDERR "\t# example: \"192.168.0.20:56875 > 74.125.67.106:80\". If a more\n";
+    print STDERR "\t# precise filter is preferred, see: --compile-filter. This feature\n";
+    print STDERR "\t# can cause performance issues. Use with caution. Useful to use with:\n";
     print STDERR "\t# --capture, --monitor (--client)\n\n";
     print STDERR "-S, --snaplen <bytes>\n";
     print STDERR "\t# Specifies the maximum number of bytes to capture from\n";
