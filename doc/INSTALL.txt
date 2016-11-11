@@ -31,16 +31,16 @@ https://github.com/darkestb4light/netcap.git.
 Note: Within netcap-<version>.tar.gz, the following structure exists:
 
 - bin/
-	nc-archive				<-- Archives server cache/notify files 
-	nc-refresh-client		<-- Client reloads learned rules 
-	nc-refresh-server		<-- Server dumps cache/notify message
-	nc-start-client			<-- Client script to automate starting
+	nc-archive		<-- Archives server cache/notify files 
+	nc-refresh-client	<-- Client reloads learned rules 
+	nc-refresh-server	<-- Server dumps cache/notify message
+	nc-start-client		<-- Client script to automate starting
 	nc-start-client-onload	<-- Client script for starting on boot (OSX)
-	nc-start-server			<-- Server script to automate starting
+	nc-start-server		<-- Server script to automate starting
 	nc-start-server-onload	<-- Server script for starting on boot (OSX)
-	nc-stop-client			<-- Client script to automate stopping
-	nc-stop-server			<-- Server script to automate stopping
-	netcap					<-- Main program
+	nc-stop-client		<-- Client script to automate stopping
+	nc-stop-server		<-- Server script to automate stopping
+	netcap			<-- Main program
 - dependencies/
 	/io-socket/
 		IO-1.25.tar.gz
@@ -60,12 +60,12 @@ Note: Within netcap-<version>.tar.gz, the following structure exists:
 	/time-local/
 		Time-Local-1.1901.tar.gz
 - doc/
-	INSTALL.txt			<-- Installation guide
-	LICENSE.txt			<-- License file for this project
-	netcap.md5			<-- Contains this version's MD5 hash
+	INSTALL.txt		<-- Installation guide
+	LICENSE.txt		<-- License file for this project
+	netcap.md5		<-- Contains this version's MD5 hash
 	README-FREEBSD.txt	<-- Guide for starting netcap at boot (FREEBSD)
 	README-OSX.txt		<-- Guide for starting netcap at boot (OSX)
-	README.txt			<-- Overview and other information
+	README.txt		<-- Overview and other information
 - etc/
 	netcap-client.plist	<-- Client script for starting on boot (OSX)
 	netcap-server.plist	<-- Server script for starting on boot (OSX)
@@ -207,11 +207,11 @@ month:
 00 17 24-31 * * /path/to/netcap/bin/nc-archive
 
 - Set up the script "nc-refresh-server" to be scheduled in root's crontab so 
-that, at a desired interval, it sends a SIGUSR1 to the server to dump the cached 
-traffic. The below example calls "nc-refresh-server" every 15 minutes. This script 
-simply checks for a running netcap server and sends it a SIGUSR1 signal. If you are 
-running netcap with the notifications enabled, this will cause netcap to output a 
-notification message to the configured location.
+that, at a desired interval, it sends a SIGUSR1 to the server to dump the 
+cached traffic. The below example calls "nc-refresh-server" every 15 minutes. 
+This script simply checks for a running netcap server and sends it a SIGUSR1 
+signal. If you are running netcap with the notifications enabled, this will 
+cause netcap to output a notification message to the configured location.
 
 00,15,30,45 * * * * /path/to/netcap/bin/nc-refresh-server
 
@@ -234,3 +234,4 @@ server's web root. For example:
 Note: The notification message can also be emailed to a list of recipients 
 if desired. Or, you can do what you wish with the outputted cache file 
 or notifications messages (i.e. parsing and creating statistics, etc).
+
