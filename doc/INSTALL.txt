@@ -50,6 +50,8 @@ Note: Within netcap-<version>.tar.gz, the following structure exists:
 	nc-stop-server			<-- Server script to automate stopping
 	netcap					<-- Main program
 - dependencies/
+	/exitutils-makemaker
+		ExtUtils-MakeMaker-7.24.tar.gz
 	/geo-ip
 		/db
 		|->/lite
@@ -68,6 +70,7 @@ Note: Within netcap-<version>.tar.gz, the following structure exists:
 		NetPacket-v0.42.0.tar.gz
 		NetPacket-1.6.0.tar.gz
 	/net-pcap/
+		libpcap-1.8.1.tar.gz
 		Net-Pcap-0.16.tar.gz
 		Net-Pcap-0.18.tar.gz
 	/net-smtp/
@@ -191,11 +194,52 @@ $ make
 $ make test (not required but will conduct tests)
 $ make install
 
-Note: If any errors, you will need to debug and consult the appropriate 
-dependency documentation to deal with it. 
+Note: 
 
-Now, proceed to 4c (assuming there were no issues that prevented 
-compiling).
+If any errors, you will need to debug and consult the appropriate dependency documentation to deal with it. 
+
+One error that is common is if pcap(3) is NOT installed. It might look something like this:
+
+============================================================
+
+"looking for -lpcap... no
+
+You appear to lack the pcap(3) library. 
+
+If it is installed in a non-standard location, please try setting the LIBS 
+and INC values on the command line.
+
+Or get the sources and install the pcap library from http://www.tcpdump.org/
+
+If you install the pcap library using a system package, make sure to also 
+install the corresponding -devel package, which contains the C headers needed 
+to compile this module."
+
+============================================================
+
+Net::Pcap (libpcap) build solutions:
+====================================
+
+=> Look to see if you have libpcap installed in the common directories. If you 
+do not have it installed, you will need to install it. It should also reside 
+in: dependencies/net-pcap/libpcap-1.8.1.tar.gz. You should see that it has been 
+installed similar to: /usr/lib or /usr/local/lib
+=> Once it is installed, attempt to compile/install Net::Pcap. If you get the same error, you may be missing the development headers in the location where 
+the  dependency Net::Pcap is looking. Try running:
+
+$ perl Makefile.PL INC=-I/path/to/libpcap/headers LIBS='-L/path/to/libpcap -lpcap'
+
+=> If this fails:
+
+$ sudo yum install libpcap-devel
+$ perl Makefile.PL
+
+If this fails, then try the following:
+
+$ sudo yum install perl-CPAN
+$ sudo cpan install Net::Pcap
+
+Now, proceed to 4c (assuming there were no issues that prevented compiling).
 
 4c. Repeat step 4 until there are no more dependencies needed to install.
 
