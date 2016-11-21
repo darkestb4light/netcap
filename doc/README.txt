@@ -271,17 +271,136 @@ Example:
 104.27.138.186:443 > 192.168.10.100:33621
 ...
 
+Another option that could be useful when capturing is to lookup up geographical 
+information based on location and IPv4 information. This can be useful for 
+trending where traffic is coming from or where it may be destined. For example, 
+suppose you wanted to track what countries might be hitting your webserver or 
+where egress traffic is going that is deemed unauthorized over services that 
+may be unauthorized (telnet, tftp, etc). The geographical information is stored 
+within a GEO database file obtained from Maxmind.com. The file is called 
+"GeoLiteCity.dat". Currently, netcap relies on the "lite" version which is 
+free. Also, netcap relies on the legacy version as opposed to using the GEO2 
+version. This will likely be included in a later version. 
+
+To use a GEO lookup, specify -gs/--geo-src-lookup or -gd/--geo-dst-lookup. The 
+former will cause netcap to conduct a GEO lookup on the source traffic, while 
+the latter will cause a GEO lookup on the destination traffic. They can be used 
+separately or together as desired. There are two constants that can be passed 
+to the option to tell netcap what lookup type you prefer. The constants are:
+GEO_LOC_INFO and GEO_IP4_INFO. The former will cause netcap to lookup any 
+location information, while the latter will cause a lookup of IPv4 information. 
+The constants can be used separately or together as follows:
+
+	...--geo-src-lookup fetch=GEO_LOC_INFO...
+	...--geo-src-lookup fetch="GEO_LOC_INFO | GEO_IP4_INFO"...
+	...--geo-dst-lookup fetch=GEO_IP4_INFO...
+	...--geo-dst-lookup fetch="GEO_IP4_INFO | GEO_LOC_INFO"...
+
+The database file is passed to the "db" argument. The parameter value must be a 
+valid path, including the database file name, holding the GEO information. For 
+example, if your database file resides in /netcap/etc/ and the file is called 
+"GeoLiteCity.dat", you would point netcap to it as follows:
+
+	--geo-dst-lookup ... db=/netcap/var/GeoLiteCity.dat
+	
+It is important to note that netcap will ignore a GEO lookup when GEO_LOC_INFO 
+is used AND the IP address used for the lookup falls within the following:
+
+	RFC 1918 "Private Use" IP addresses:
+		10.0.0.0 - 10.255.255.255
+		172.16.0.0 - 172.31.255.255
+		192.168.0.0 - 192.168.255.255
+	"Multicast" IP addresses:
+		224.0.0.0 to 239.255.255.255
+	"Broadcast" IP addresses:
+		255.255.255.255
+	"Autoconfiguration" IP Addresses:
+		169.254.0.0 - 169.254.255.255
+	"Loopback" IP addresses:
+		127.0.0.0 - 127.255.255.255
+
+If an IP falls within any of the above, the lookup value returned is prefixed 
+with: PU, MC, BC, AC, LB respectively. Otherwise, a lookup is attempted 
+and if a value is not found, NULL is returned for the respective value. 
+
+The prefix identifiers map as follows:
+	RFC1918 / "Private Use" = PU
+	"Multicast" = MC
+	"Broadcast" = BC
+	"Autoconfiguration" = AC
+	"Loopback" = LB
+
+The fields for a location lookup (GEO_LOC_INFO) are:
+
+		continent code
+		country code (three character)
+		country name
+		city
+		region name
+		postal code
+		latitude
+		longitude
+		time zone
+		area code
+		
+The fields for a IPv4 lookup (GEO_IP4_INFO) are: 
+	
+	IPv4 range minimum
+	IPv4 range maximum
+	IPv4 mask
+	IPv4 CIDR
+	
+As an example, we will capture 10 packets, fetch both source and destination 
+information for location and IPv4. We named our GEO DB "geolite.dat" and 
+point netcap to its location. We will only be concerned with port 80 or 443 
+traffic (HTTP, HTTPS) where the traffic is for www.iana.org and the packets 
+are from www.iana.org (i.e. return traffic). We will specify that we are only  
+interested in unique packets. Finally, we will write the results to both stdout 
+and to a capture file residing in our home: ~/Desktop/cap.txt:
+
+$ ./netcap -c -s -cf ~/Desktop/cap.txt -gd fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=~/Desktop/geolite.dat -gs fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=~/Desktop/geolite.dat -pc 10 -re "^.*:(80\b|443)\s+>" -u --compile-filter "host www.iana.org"
+
+...
+192.0.32.8:443 > 192.168.0.45:63192|NA|USA|United States|Los Angeles|California|90066|34.0039|-118.4338|America/Los_Angeles|310|803|192.0.32.0|192.0.47.255|255.255.240.0|192.0.32.0/20|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|RFC1918_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16
+
+Total packets:
+Network: 203	IP: 14
+Requested: 10	Captured: 10
+Unique: 1
+...
+
+In the above example, we can see the destination (192.0.32.8) information is 
+retrieved for both location and IPv4. The source (192.168.0.45) falls within 
+the RFC1918 address space and is prefixed with "PU" (Private Use) identifier. 
+
+The database file is usually updated every 30 days. It can be retrieved from:
+
+http://geolite.maxmind.com/download/geoip/database/GeoLiteCity.dat.gz
+
+Once, downloaded, it can be uncompressed and placed where your current GEO DB 
+resides. In most cases, a default DB exists within netcap's default structure:
+
+	/path/to/netcap/var/GeoLiteCity.dat
+		OR
+	/path/to/netcap/var/geolite.dat
+	
+IMPORTANT: It is encouraged that the existing DB is backed up as we have no 
+control over how this DB file is updated. An update could, therefore, break 
+functionality of this netcap feature. You have been warned.
+
 Useful commands/options when capturing are:
 
 -C, --Config
 -cf, --capture-file
 --compile-filter
--s, --stdout	
+-gd, --geo-dst-lookup 
+-gs, --geo-src-lookup
 -i, --interface
 -li, --list-interfaces
 -p --promiscuous
 -pc, --packet-count
 -pd, --packet-detail
+-s, --stdout	
 -S, --snaplen
 -re, --regex
 -rt, --read-timeout
@@ -625,6 +744,78 @@ If more granularity is needed, you can leverage powerful features such as the
 --regex and --compile-filter options. These can be leveraged separately or 
 together as needed.
 
+As mentioned in the ClIENT section of this document, another option that could 
+prove useful is netcap's ability to conduct geographical and IPv4 lookups. This 
+can be beneficial for analysis and analytics. See the CLIENT section to see 
+more information. In this section, we assume to are aware of why you would want 
+to use it and just want to illustrate a simple example scenario:
+
+Scenario:
+=========
+
+You decide that traffic to www.blackhat.com is unauthorized - you worry that no 
+good can possible come from visiting this site - in all seriousness, the point 
+is that www.blackhat.com can be replaced with any website that is ACTUALLY a 
+site that could cause harm; just using this site as an example only :)
+
+We are in a monitoring situation and have a client and server. In this example, 
+we are interested in monitoring traffic to www.blackhat.com where data is being 
+passed (not concerned with other traffic). We will conduct a source and server 
+GEO DB lookup for both location and IPv4. There are other options being used, 
+but the only other real important one is to note that we only want unique 
+traffic returned. On the server side, we have typical options specified. One 
+interesting option is -pc (--packet-count) is set to 1. In this example, we 
+want to know when see even 1 event. Since we have also asked our server to 
+notify us, we would immediately learn of this happening, should we not be 
+watching the logs (or the console as we were not running in daemon mode).
+
+Client:
+=======
+
+$ ./netcap -m --client localhost 55555 --log=client ~/Desktop/client.log -s -p -pd --compile-filter "host www.blackhat.com && (tcp[tcpflags] & (tcp-push) != 0)" -gd fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=etc/geolite.dat -gs fetch="GEO_LOC_INFO|GEO_IP4_INFO" db=etc/geolite.dat -u 
+
+Server:
+=======
+
+$ ./netcap -m --server localhost 55555 --cache-file ~/Desktop/cache.txt --cache-key-dst --log=server ~/Desktop/server.log -n out=~/Desktop/notify.txt --sort-cache-date -pc 1 -s
+
+Now that we have our monitoring up, we sit back and relax. At some point, we 
+see events. This happens after traffic to www.blackhat.com is seen. Below are 
+the example results. Take note of the amount traffic observed on the client 
+compared to that of the client (thanks to the unique flag):
+
+Client:
+=======
+
+Client Running|Sun Nov 20 16:32:36 2016|netcap|42658|localhost:55555|udp
+Binding to interface: en0... Listening (promiscuous mode = Yes)...
+Server Message|Sun Nov 20 16:32:39 2016|netcap|42658|localhost:55555|udp|192.168.0.45:63980 > 104.20.65.243:80|0|64:652:1479684759:35314|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
+Server Message|Sun Nov 20 16:32:39 2016|netcap|42658|localhost:55555|udp|192.168.0.45:63961 > 104.20.65.243:443|0|64:875:1479684759:234384|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
+Server Message|Sun Nov 20 16:32:39 2016|netcap|42658|localhost:55555|udp|192.168.0.45:63985 > 104.20.65.243:80|0|64:732:1479684759:580722|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
+Server Message|Sun Nov 20 16:32:39 2016|netcap|42658|localhost:55555|udp|104.20.65.243:443 > 192.168.0.45:63961|0|64:571:1479684759:609745|tcp:PSH/ACK:24|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16
+... [OTHER UNIQUE TRAFFIC OMITTED] ...
+
+... [AT SOME POINT AN INTERRUPT IS SENT] ...
+
+-- Interrupt signal caught. Wrapping up...
+
+Total packets:
+Network: 3373	IP: 3194
+Requested: Indefinite amount	Captured: 3194
+Unique: 15
+...
+
+Server:
+=======
+
+Server Running|Sun Nov 20 16:32:33 2016|netcap|42657|localhost:55555|udp
+Client Message|Sun Nov 20 16:32:39 2016|netcap|42657|localhost:55555 < 127.0.0.1:64851|udp|192.168.0.45 > 104.20.65.243:80|0|64:652:1479684759:35314|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
+Client Message|Sun Nov 20 16:32:39 2016|netcap|42657|localhost:55555 < 127.0.0.1:64851|udp|192.168.0.45 > 104.20.65.243:443|0|64:875:1479684759:234384|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
+
+In the above, we can see TWO unique events for the server. One for port 80 and 
+one for port 443. Also, note the GEO DB data returned (see CLIENT section for 
+what the "PU" prefix means for the IP of 192.168.0.45 in the event).
+
 Useful commands/options when monitoring are:
 	
 	Shared For Client and Server:
@@ -638,7 +829,9 @@ Useful commands/options when monitoring are:
 	
 	Specific To Client:
 
---compile-filter	
+--compile-filter
+-gd, --geo-dst-lookup 
+-gs, --geo-src-lookup	
 -i, --interface
 -S, --snaplen
 -rt, --read-timeout

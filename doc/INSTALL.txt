@@ -14,34 +14,47 @@ Purpose:
 	INSTALLATION OF NETCAP
 	======================
 	
-If you wish to keep it simple, complete steps:
+If you wish to keep it simple, complete the following steps outlined below. 
+The details of each step is contained within each numbered section:
 
 #1 = It contains the default structure, then:
-#4 = Install the dependencies
+#4 = Install the dependencies (if necessary)
 #5 = Execute: /path/to/netcap —-help (where /path/to/netcap is the location 
 of where netcap resides)
-	
+
+===========================================================================
 	
 1. Copy netcap archive to the desired server(s) for installation.
 
 IMPORTANT: 
-The latest netcap archive can be downloaded from https://github.com/darkestb4light/netcap (netcap-master.zip) or by cloning 
-https://github.com/darkestb4light/netcap.git.
+
+The latest netcap archive can be downloaded from: 
+
+https://github.com/darkestb4light/netcap (netcap-master.zip)
+
+Or, you can clone:  
+
+git clone https://github.com/darkestb4light/netcap.git
 
 Note: Within netcap-<version>.tar.gz, the following structure exists:
 
 - bin/
-	nc-archive		<-- Archives server cache/notify files 
-	nc-refresh-client	<-- Client reloads learned rules 
-	nc-refresh-server	<-- Server dumps cache/notify message
-	nc-start-client		<-- Client script to automate starting
+	nc-archive				<-- Archives server cache/notify files 
+	nc-refresh-client		<-- Client reloads learned rules 
+	nc-refresh-server		<-- Server dumps cache/notify message
+	nc-start-client			<-- Client script to automate starting
 	nc-start-client-onload	<-- Client script for starting on boot (OSX)
-	nc-start-server		<-- Server script to automate starting
+	nc-start-server			<-- Server script to automate starting
 	nc-start-server-onload	<-- Server script for starting on boot (OSX)
-	nc-stop-client		<-- Client script to automate stopping
-	nc-stop-server		<-- Server script to automate stopping
-	netcap			<-- Main program
+	nc-stop-client			<-- Client script to automate stopping
+	nc-stop-server			<-- Server script to automate stopping
+	netcap					<-- Main program
 - dependencies/
+	/geo-ip
+		/db
+		|->/lite
+			GeoLiteCity.dat.gz		
+		Geo-IP-1.50.tar.gz
 	/io-socket/
 		IO-1.25.tar.gz
 	/mime-lite/
@@ -49,6 +62,8 @@ Note: Within netcap-<version>.tar.gz, the following structure exists:
 		MIME-Lite-3.030.tar.gz
 	/net-cidr/
 		Net-CIDR-0.11.tar.gz
+	/net-mask
+		Net-Netmask-1.9022.tar
 	/net-packet/
 		NetPacket-v0.42.0.tar.gz
 		NetPacket-1.6.0.tar.gz
@@ -60,13 +75,14 @@ Note: Within netcap-<version>.tar.gz, the following structure exists:
 	/time-local/
 		Time-Local-1.1901.tar.gz
 - doc/
-	INSTALL.txt		<-- Installation guide
-	LICENSE.txt		<-- License file for this project
-	netcap.md5		<-- Contains this version's MD5 hash
+	INSTALL.txt			<-- Installation guide
+	LICENSE.txt			<-- License file for this project
+	netcap.md5			<-- Contains this version's MD5 hash
 	README-FREEBSD.txt	<-- Guide for starting netcap at boot (FREEBSD)
 	README-OSX.txt		<-- Guide for starting netcap at boot (OSX)
-	README.txt		<-- Overview and other information
+	README.txt			<-- Overview and other information
 - etc/
+	geolite.dat			<-- A GEO "lite" legacy DB
 	netcap-client.plist	<-- Client script for starting on boot (OSX)
 	netcap-server.plist	<-- Server script for starting on boot (OSX)
 	netcap.config		<-- Netcap's configuration file
@@ -135,52 +151,66 @@ $ /path/to/netcap/bin/netcap --help
 
 Note: 
 If the netcap "help" menu displays, all necessary dependencies should 
-be installed and you can proceed to step 4. Otherwise, install the required 
-dependency (proceed to step 3a):
+be installed and you can proceed to step 5. Otherwise, install the required 
+dependency (proceed to step 4a):
 
 4a. For each necessary dependency package, perform the following:
 
-$ sudo -s (unless you are already root)
-$ cd <path>/netcap-<version>/dependencies/<dependency>
+$ cd </path/to/netcap>/dependencies/<dependency>
+
+Where: </path/to/netcap> is the directory where the "dependencies" directory 
+exists within the netcap structure
+
 $ tar xzvf <dependency>.tar.gz
+
+This will extract all the files contained within <dependency>.tar.gz
+
 $ cd <dependency>
 
-Now, proceed to 3b.
+Where: <dependency> is the extracted dependency directory you extracted above
+
+Now, proceed to 4b.
 
 4b. To compile each dependency (unless otherwise specified):
 
 $ perl Makefile.PL
+$ make
 $ make test
 $ sudo make install
 
+Note: The "make test" step can be skipped, but it is always recommended to be 
+sure all tests pass for the environment that the dependency is being installed 
+within 
+
 Note: Net::Pcap is a bit different as it is a wrapper for the libpcap API 
-written in C, try to compile it doing the same approach as above. If this 
-is not possible (due to errors or you do not see a "Makefile.PL" file, 
-proceed to build the dependency as follows:
+written in C. You should be able to compile it doing the same approach as 
+above. If this is not possible (due to errors or you do not see the 
+"Makefile.PL" file), proceed to build the dependency as follows:
 
 $ make
 $ make test (not required but will conduct tests)
 $ make install
 
 Note: If any errors, you will need to debug and consult the appropriate 
-dependency documentation to deal with it.
+dependency documentation to deal with it. 
 
 Now, proceed to 4c (assuming there were no issues that prevented 
 compiling).
 
-4c. Repeat step 4 until there are no more dependencies are needed 
-to install.
+4c. Repeat step 4 until there are no more dependencies needed to install.
 
 =================================================
 
 5. Once step 4 is complete, you should be able to run netcap. Test by 
 executing:
 
-$ /path/to/netcap/bin/netcap --help
+$ /path/to/netcap --help
+
+Where: </path/to/netcap> is the directory where netcap exists
 
 You should get the "help" output. If this happens, you are good to go!
 
-=================================================
+===========================================================================
 
 If desired, you can proceed to the "TESTING NETCAP" section in the README.txt 
 file to ensure netcap is working as desired. For some optional things to set up 
