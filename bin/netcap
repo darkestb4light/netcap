@@ -21,23 +21,7 @@
 #		-c, --capture
 #		-m, --monitor --client
 # 	Dependencies:
-#		- IO::Socket (v. 1.25, part of core installed modules)
-#			http://search.cpan.org/~gbarr/IO-1.25/lib/IO/Socket.pm
-#		- MIME::Lite (v. 3.027)
-#			http://search.cpan.org/~rjbs/MIME-Lite-3.027/lib/MIME/Lite.pm
-#		- Net::CIDR (v 0.11)
-#			http://search.cpan.org/~mrsam/Net-CIDR-0.11/CIDR.pm
-#		- Net::Pcap (v. 0.16)
-#			http://search.cpan.org/~saper/Net-Pcap/Pcap.pm
-#		- NetPacket (v. 0.42) 
-#			NetPacket::Ethernet, NetPacket::IP, NetPacket::TCP
-#			http://search.cpan.org/~yanick/NetPacket-v0.42.0/
-#		- Net::SMTP (v. libnet-1.22)
-#			http://search.cpan.org/~gbarr/libnet-1.22/Net/SMTP.pm
-#		- POSIX (v. 5.12.1)
-#			http://search.cpan.org/~jesse/perl-5.12.1/
-#		- Time::Local (v. 1.1901)
-#			http://search.cpan.org/~drolsky/Time-Local-1.1901/lib/Time/Local.pm
+#		See "/dependencies" or "doc/" structures
 #	License:
 #		Copyright (C) 2010-2016 Ray T. Daley (rcdsox@gmail.com)
 #
@@ -58,15 +42,17 @@
 #		"doc/LICENSE.txt" which must accompany this code).
 ###############################################################################
 use File::Basename;
+use Geo::IP;
 use IO::Socket;
-use MIME::Lite;
 use Net::CIDR;
 use Net::Pcap;
+use Net::Netmask;
+use Net::SMTP;
 use NetPacket::Ethernet qw(:ALL);
 use NetPacket::IP qw(:ALL);
 use NetPacket::TCP;
 use NetPacket::UDP;
-use Net::SMTP;
+use MIME::Lite;
 use POSIX qw(setsid);
 use Time::Local 'timelocal_nocheck';
 
@@ -88,10 +74,10 @@ sub main
 					success	=> 0,
 				);
 	my %arg = 	(
-					name				=> $env{program},
-					do_capture 			=> 0,
-					do_stdout			=> 0,
-					interface			=> undef,
+					name					=> $env{program},
+					do_capture 				=> 0,
+					do_stdout				=> 0,
+					interface				=> undef,
 					snaplen					=> 64,
 					read_timeout			=> 5,
 					promiscuous				=> 0,
@@ -131,7 +117,13 @@ sub main
 					do_packet_detail		=> 0,
 					do_compile_filter		=> 0,
 					compile_filter			=> undef,
-					compile_filter_optimize	=> 1
+					compile_filter_optimize	=> 1,
+					do_geo_src				=> 0,
+					geo_src_info_flag		=> 0x00,
+					geo_db_src_file			=> undef,
+					do_geo_dst				=> 0,
+					geo_dst_info_flag		=> 0x00,
+					geo_db_dst_file			=> undef	
 				);
 	my %learned = 	(
 						record_id		=> 0,
@@ -154,7 +146,7 @@ sub main
     	if($ARGV[$i] =~ m/^-C$|^--Config$/){
     		if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
     			$arg{config_file} = $ARGV[++$i];
-    			die "Configuration file ($arg{config_file}) cannot match program name ($arg{name}).\n"
+    			die "ERROR: Configuration file ($arg{config_file}) cannot match program name ($arg{name}).\n"
     				if($arg{name} eq $arg{config_file});
     		}else{
     			$arg{config_file} = "$arg{name}.config";
@@ -166,26 +158,26 @@ sub main
     		$arg{do_stdout} = 1;
     	}elsif($ARGV[$i] =~ m/^-i$|^--interface$/){
     		$arg{interface} = $ARGV[++$i];
-    		die "Must specify a valid interface with this option.\n"
+    		die "ERROR: Must specify a valid interface with this option.\n"
     			if(!defined($arg{interface}) || $arg{interface} !~ m/^\w+$/);
     	}elsif($ARGV[$i] =~ m/^-S$|^--snaplen$/){
     		$arg{snaplen} = $ARGV[++$i];	
-    		die "Invalid snaplen value. Must be between 38-65535.\n"
+    		die "ERROR: Invalid snaplen value. Must be between 38-65535.\n"
     			if(($arg{snaplen}) < 38 || ($arg{snaplen}) > 65535);	
     	}elsif($ARGV[$i] =~ m/^-rt$|^--read-timeout$/){
     		$arg{read_timeout} = $ARGV[++$i];	
-    		die "Invalid read timeout value. Must be between 1-60000.\n"
+    		die "ERROR: Invalid read timeout value. Must be between 1-60000.\n"
     			if($arg{read_timeout} < 1 || $arg{read_timeout} > 60000);	
     	}elsif($ARGV[$i] =~ m/^-p$|^--promiscuous$/){
     		$arg{promiscuous} = 1;
     	}elsif($ARGV[$i] =~ m/^-pc$|^--packet-count$/){
     		$arg{packet_count} = $ARGV[++$i];
-    		die "Invalid packet count specified. Must be a positive integer.\n"
+    		die "ERROR: Invalid packet count specified. Must be a positive integer.\n"
     			if($arg{packet_count} !~ m/^\d+$/ || $arg{packet_count} < 0);		
     	}elsif($ARGV[$i] =~ m/^-cf$|^--capture-file$/){
     		if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
     			$arg{cfile} = $ARGV[++$i];
-    			die "Capture file ($arg{cfile}) cannot match program name ($arg{name}).\n"
+    			die "ERROR: Capture file ($arg{cfile}) cannot match program name ($arg{name}).\n"
     				if($arg{name} eq $arg{cfile});
     		}else{
     			$arg{cfile} = "$arg{name}.cap";
@@ -195,10 +187,10 @@ sub main
     	}elsif($ARGV[$i] =~ m/^-lf$|^--learn-file$/){
     		if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
     			$arg{lfile} = $ARGV[++$i];
-    			die "Learn file ($arg{lfile}) cannot match program name ($arg{name}).\n"
+    			die "ERROR: Learn file ($arg{lfile}) cannot match program name ($arg{name}).\n"
     				if($arg{name} eq $arg{lfile});
     			if(defined($arg{lfile}) && defined($arg{cfile})){
-    				die "Learn file ($arg{lfile}) cannot match capture file ($arg{cfile}).\n"
+    				die "ERROR: Learn file ($arg{lfile}) cannot match capture file ($arg{cfile}).\n"
     					if($arg{lfile} eq $arg{cfile});
     			}
     		}else{
@@ -218,11 +210,11 @@ sub main
     			my @unique = keys(%tmp);
     			push(@{$arg{regex_capall}}, @unique);
     		}else{
-    			die "Option requires a valid regular expression.\n";
+    			die "ERROR: Option requires a valid regular expression.\n";
     		}
     	}elsif($ARGV[$i] =~ m/^--compile-filter$/){
     		$arg{compile_filter} = $ARGV[++$i];
-    		die "Compile filter expression required.\n" 
+    		die "ERROR: Compile filter expression required.\n" 
     			unless(length($arg{compile_filter}) > 0);
     		if(defined($ARGV[$i+1]) && $ARGV[$i+1] !~ m/^-{1,2}.*?$/){
     			$ARGV[++$i];
@@ -232,7 +224,7 @@ sub main
     					$arg{compile_filter_optimize} = 0;
     			}else{
     				print STDERR "Option parameter format invalid. Option requires filter; ";
-    				die "if using the\noptimization parameter, it must be true (1) or false (0).\n";
+    				die "ERROR: if using the\noptimization parameter, it must be true (1) or false (0).\n";
     			}
     		}
     		$arg{do_compile_filter} = 1;
@@ -242,7 +234,7 @@ sub main
     			if($arg{cache_file} =~ m/^-{1,2}\w+/){
     				$arg{cache_file} = "$arg{name}.cache";
     			}
-    			die "Capture file ($arg{cache_file}) cannot match program name ($arg{name}).\n"
+    			die "ERROR: Capture file ($arg{cache_file}) cannot match program name ($arg{name}).\n"
     				if($arg{name} eq $arg{cache_file});
     		}else{
     			$arg{cache_file} = "$arg{name}.cache";
@@ -255,7 +247,7 @@ sub main
     		$arg{do_notify} = 1;
     		if($ARGV[$i+1] =~ m/^out=(.*?\w+.*?)$/){
 				$arg{notify_file} = $1;
-				die "Notify file ($arg{notify_file}) cannot match program name ($arg{name}).\n"
+				die "ERROR: Notify file ($arg{notify_file}) cannot match program name ($arg{name}).\n"
 					if($arg{name} eq $arg{notify_file});
 				$ARGV[++$i];
 			}
@@ -268,7 +260,7 @@ sub main
 					my @alias = split(/,/, $2);
 					foreach(@alias)
 					{
-						die "Invalid e-mail address format: $_\n" unless(/^\w+.?\w+?\@\w+\.\w+$/);
+						die "ERROR: Invalid e-mail address format: $_\n" unless(/^\w+.?\w+?\@\w+\.\w+$/);
 					}
 					$arg{notify_mail} = "@alias\n";
 					$ARGV[++$i];
@@ -279,7 +271,7 @@ sub main
 			$arg{do_log} = 1;
 			if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
 				$arg{log_server} = $ARGV[++$i];
-				die "Server log file ($arg{log_server}) cannot match program name ($arg{name}).\n"
+				die "ERROR: Server log file ($arg{log_server}) cannot match program name ($arg{name}).\n"
 					if($arg{name} eq $arg{log_server});
 			}else{
 				$arg{log_server} = "$arg{name}.server.log" if(! defined($arg{log_server}));
@@ -288,7 +280,7 @@ sub main
 			$arg{do_log} = 1;
 			if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
 				$arg{log_client} = $ARGV[++$i];
-				die "Client log file ($arg{log_client}) cannot match program name ($arg{name}).\n"
+				die "ERROR: Client log file ($arg{log_client}) cannot match program name ($arg{name}).\n"
 					if($arg{name} eq $arg{log_client});
 			}else{
 				$arg{log_client} = "$arg{name}.client.log" if(! defined($arg{log_client}));
@@ -296,6 +288,90 @@ sub main
 		}elsif($ARGV[$i] =~ m/^-d$|^--daemon$/){
 			$arg{do_daemon} = 1;
 			$arg{error_file} = "$arg{name}.error.log";
+		}elsif($ARGV[$i] =~ m/^-gd$|^-geo-dst-lookup$/){
+			if($ARGV[$i+1] =~ m/^fetch=.*$/){
+				$ARGV[$i++];
+				if($ARGV[$i] =~ m/^fetch=\s*(GEO_LOC_INFO|GEO_IP4_INFO)?\s*\|?\s*(GEO_LOC_INFO|GEO_IP4_INFO)?\s*$/){
+					my $GEO_LOC_INFO = 0x00;
+					my $GEO_IP4_INFO = 0x00;
+					my $a = $1;
+					my $b = $2;
+					if($a =~ m/\bGEO_LOC_INFO\b/){
+						$GEO_LOC_INFO = 0x01;	
+					}elsif($a =~ m/\bGEO_IP4_INFO\b/){
+						$GEO_IP4_INFO = 0x02;
+					}
+					if($b =~ m/\bGEO_LOC_INFO\b/){
+						$GEO_LOC_INFO = 0x01;	
+					}elsif($b =~ m/\bGEO_IP4_INFO\b/){
+						$GEO_IP4_INFO = 0x02;
+					}
+					$arg{geo_dst_info_flag} = $GEO_LOC_INFO | $GEO_IP4_INFO;
+					die "ERROR: Invalid destination geo constant value: $arg{geo_dst_info_flag}\n"
+						unless($arg{geo_dst_info_flag} >= 1 && $arg{geo_dst_info_flag} <= 3);
+				}else{
+					die "ERROR: Invalid destination geo constant or combination. Expecting: GEO_LOC_INFO or GEO_IP4_INFO\n";
+				}
+				if($ARGV[$i+1] =~ m/^db=.*$/){
+					$ARGV[$i++];
+					if($ARGV[$i] =~ m/^db=(.*?)$/){
+						$arg{geo_db_dst_file} = $1;
+						die "ERROR: Invalid value for destination geo database file.\n"
+							if(length($arg{geo_db_dst_file}) == 0);
+						die "ERROR: Unable to find destination geo database file: $arg{geo_db_dst_file}\n"
+							unless(-e $arg{geo_db_dst_file});
+					}
+				}else{
+					print STDERR "ERROR: Expecting argument for destination: db=<file>\n";
+					die "ERROR: Expecting <file> to be a compatible GeoLiteCity.dat DB from Maxmind.com.\n";
+				}
+			}else{
+				print STDERR "ERROR: Expecting argument for destination: fetch=GEO_CONSTANT [| GEO_CONSTANT]\n";
+				die "ERROR: Expecting GEO_CONSTANT to be: GEO_LOC_INFO or GEO_IP4_INFO\n"
+			}
+			$arg{do_geo_dst} = 1;
+		}elsif($ARGV[$i] =~ m/^-gs$|^-geo-src-lookup$/){
+			if($ARGV[$i+1] =~ m/^fetch=.*$/){
+				$ARGV[$i++];
+				if($ARGV[$i] =~ m/^fetch=\s*(GEO_LOC_INFO|GEO_IP4_INFO)?\s*\|?\s*(GEO_LOC_INFO|GEO_IP4_INFO)?\s*$/){
+					my $GEO_LOC_INFO = 0x00;
+					my $GEO_IP4_INFO = 0x00;
+					my $a = $1;
+					my $b = $2;
+					if($a =~ m/\bGEO_LOC_INFO\b/){
+						$GEO_LOC_INFO = 0x01;	
+					}elsif($a =~ m/\bGEO_IP4_INFO\b/){
+						$GEO_IP4_INFO = 0x02;
+					}
+					if($b =~ m/\bGEO_LOC_INFO\b/){
+						$GEO_LOC_INFO = 0x01;	
+					}elsif($b =~ m/\bGEO_IP4_INFO\b/){
+						$GEO_IP4_INFO = 0x02;
+					}
+					$arg{geo_src_info_flag} = $GEO_LOC_INFO | $GEO_IP4_INFO;
+					die "ERROR: Invalid source geo constant value: $arg{geo_src_info_flag}\n"
+						unless($arg{geo_src_info_flag} >= 1 && $arg{geo_src_info_flag} <= 3);
+				}else{
+					die "ERROR: Invalid source geo constant or combination. Expecting: GEO_LOC_INFO or GEO_IP4_INFO\n";
+				}
+				if($ARGV[$i+1] =~ m/^db=.*$/){
+					$ARGV[$i++];
+					if($ARGV[$i] =~ m/^db=(.*?)$/){
+						$arg{geo_db_src_file} = $1;
+						die "ERROR: Invalid value for source geo database file.\n"
+							if(length($arg{geo_db_src_file}) == 0);
+						die "ERROR: Unable to find source geo database file: $arg{geo_db_src_file}\n"
+							unless(-e $arg{geo_db_src_file});
+					}
+				}else{
+					print STDERR "ERROR: Expecting argument for source: db=<file>\n";
+					die "ERROR: Expecting <file> to be a compatible GeoLiteCity.dat DB from Maxmind.com.\n";
+				}
+			}else{
+				print STDERR "ERROR: Expecting argument for source: fetch=GEO_CONSTANT [| GEO_CONSTANT]\n";
+				die "ERROR: Expecting GEO_CONSTANT to be: GEO_LOC_INFO or GEO_IP4_INFO\n"
+			}
+			$arg{do_geo_src} = 1;
     	}else{	#commands
     		if($ARGV[$i] =~ m/^-li$|^--list-interfaces$/){
     			usage() if($#ARGV + 1 != 1);
@@ -319,15 +395,15 @@ sub main
 				}elsif($ARGV[$i] eq "--client"){
 					$arg{monitor_client} = 1;
 				}
-				die "Missing required monitor command argument: --server or --client\n"
+				die "ERROR: Missing required monitor command argument: --server or --client\n"
 					if(($arg{monitor_server} == 0) && ($arg{monitor_client} == 0));
 				$arg{host} = $ARGV[++$i];
-				die "Invalid monitor command argument or order:  --server|--client <host> <port>\n"
+				die "ERROR: Invalid monitor command argument or order:  --server|--client <host> <port>\n"
 					if($arg{host} =~ m/^[0-9]{1,5}$/ || length($arg{host}) == 0);
 				$arg{port} = $ARGV[++$i];
-				die "Invalid monitor command argument or order:  --server|--client <host> <port>\n"
+				die "ERROR: Invalid monitor command argument or order:  --server|--client <host> <port>\n"
 					if(length($arg{port}) == 0);
-				die "Invalid port - must be between 1-65535.\n" 
+				die "ERROR: Invalid port - must be between 1-65535.\n" 
 					if($arg{port} < 1 | ($arg{port}) > 65535);
 				$arg{packet_count} = 0 if(!defined($arg{packet_count}));
 				if($arg{monitor_server}){
@@ -343,7 +419,7 @@ sub main
 				$arg{do_sort_learn} = 1;
 				if(defined($ARGV[$i+1]) && ($ARGV[$i+1] !~ m/^-{1,2}\w+/)){
 					$arg{lfile} = $ARGV[++$i];
-					die "Learn file ($arg{lfile}) cannot match program name ($arg{name}).\n"
+					die "ERROR: Learn file ($arg{lfile}) cannot match program name ($arg{name}).\n"
 						if($arg{name} eq $arg{lfile});
 				}else{
 					$arg{lfile} = "$arg{name}.learn" if(!defined($arg{lfile}));
@@ -358,12 +434,12 @@ sub main
 				$env{success} = ($env{success} == 1) ? 0 : 1;
 			}elsif($ARGV[$i] =~ m/^-gr$|^--get-range$/){
 				usage() if($#ARGV + 1 != 2);
-				die "Invalid CIDR format. Expecting a valid CIDR block (ex: 192.168.0.0/16).\n"
+				die "ERROR: Invalid CIDR format. Expecting a valid CIDR block (ex: 192.168.0.0/16).\n"
 					if($ARGV[++$i] !~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/);
 				lookup_cidr_range(0, 1, $ARGV[$i], 0, 0);
 			}elsif($ARGV[$i] =~ m/^-gc$|^--get-cidr$/){
 				usage() if($#ARGV + 1 != 2);
-				die "Invalid IP range. Expecting a valid range (ex: 192.168.0.0-192.168.255.255).\n"
+				die "ERROR: Invalid IP range. Expecting a valid range (ex: 192.168.0.0-192.168.255.255).\n"
 					if $ARGV[++$i] !~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}
 										-\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/x;
 				lookup_cidr_range(0, 2, $ARGV[$i], 0, 0);
@@ -396,7 +472,7 @@ sub main
 				print STDERR "success.\n";
 				sort_learned($arg{lfile}, $sortopt, \%learned, \@comments);
 			}else{
-				die "File ($arg{lfile}) does not exist or does not contain data. Aborting.\n";
+				die "ERROR: File ($arg{lfile}) does not exist or does not contain data. Aborting.\n";
 			}
 		}elsif($arg{do_testre}){
 			print "$arg{name} will test the following pattern and regular expression\n";
@@ -434,6 +510,29 @@ sub main
 			}else{
 				print STDERR "|--> avoid promiscuous mode\n";
 			}
+			if($arg{do_packet_detail}){
+				print STDERR "|--> include packet detail\n";
+			}
+			if($arg{do_geo_src}){
+				print STDERR "|--> do source GEO DB lookups for ";
+				if($arg{geo_src_info_flag} == 1){
+					print STDERR "location information\n";
+				}elsif($arg{geo_src_info_flag} == 2){
+					print STDERR "IPv4 information\n";
+				}elsif($arg{geo_src_info_flag} == 3){
+					print STDERR "location and IPv4 information\n";
+				}
+			}
+			if($arg{do_geo_dst}){
+				print STDERR "|--> do destination GEO DB lookups for ";
+				if($arg{geo_dst_info_flag} == 1){
+					print STDERR "location information\n";
+				}elsif($arg{geo_dst_info_flag} == 2){
+					print STDERR "IPv4 information\n";
+				}elsif($arg{geo_dst_info_flag} == 3){
+					print STDERR "location and IPv4 information\n";
+				}
+			}
 			capture(\%arg, $env{pid});
 		}elsif($arg{do_learn}){
 			if(!defined($arg{cfile})){
@@ -441,14 +540,14 @@ sub main
 				print STDERR "Capture file not defined. Will learn from $arg{cfile} instead.\n";	
 			}
 			if(defined($arg{cfile})){
-				die "File: $arg{cfile} does not exist. Try capturing some packets first.\n" 
+				die "ERROR: File: $arg{cfile} does not exist. Try capturing some packets first.\n" 
 					if(! -e $arg{cfile});
-				die "File: $arg{cfile} exists but is not a plain file. Check file type/bits.\n" 
+				die "ERROR: File: $arg{cfile} exists but is not a plain file. Check file type/bits.\n" 
 					if(! -f $arg{cfile});
-				die "File: $arg{cfile} exists but is empty. Try capturing some packets first.\n"
+				die "ERROR: File: $arg{cfile} exists but is empty. Try capturing some packets first.\n"
 					if(-z $arg{cfile});
 			}
-			die "File: $arg{lfile} exists but is not a plain file. Check file type/bits.\n" 
+			die "ERROR: File: $arg{lfile} exists but is not a plain file. Check file type/bits.\n" 
 				if(-e $arg{lfile} && ! -f $arg{lfile});
 			print STDERR "$arg{name} will attempt to:\n|--> read from $arg{cfile}\n";
 			print STDERR "|--> write learned traffic to $arg{lfile}\n";
@@ -465,16 +564,18 @@ sub main
 			print STDERR "$arg{name} has finished learning.\n";
 		}elsif($arg{do_monitor}){
 			if($arg{monitor_server}){
-				die "Interface option not necessary when creating a monitoring server.\n"
+				die "ERROR: Interface option not necessary when creating a monitoring server.\n"
 					if(defined($arg{interface}));
-				die "Unique option not necessary when creating a monitoring server.\n"
+				die "ERROR: Unique option not necessary when creating a monitoring server.\n"
 					if($arg{do_unique});
-				die "Promiscuous option not necessary when creating a monitoring server.\n"
+				die "ERROR: Promiscuous option not necessary when creating a monitoring server.\n"
 					if($arg{promiscuous});
-				die "Packet detail option not necessary when creating a monitoring server.\n"
+				die "ERROR: Packet detail option not necessary when creating a monitoring server.\n"
 					if($arg{do_packet_detail});
-				die "Compile filter option not necessary when creating a monitoring server.\n"
+				die "ERROR: Compile filter option not necessary when creating a monitoring server.\n"
 					if($arg{do_compile_filter});
+				die "ERROR: GEO lookup option not necessary when creating a monitoring server.\n"
+					if($arg{do_geo_src} || $arg{do_geo_dst});
 				daemonize(\$env{pid}, $arg{error_file}) if($arg{do_daemon});
 				monitor_server(\%arg, $env{pid});
 				print STDERR "$arg{name} (server pid: $env{pid}) has finished monitoring.\n"
@@ -512,7 +613,7 @@ sub main
 				print STDERR "$arg{name} (client pid: $env{pid}) has finished monitoring.\n"
 					if(($arg{do_stdout}) && (! $arg{do_daemon}));
 			}else{
-				die "$arg{name} does not indicate a server or client flag set. Quitting.\n";
+				die "ERROR: $arg{name} does not indicate a server or client flag set. Quitting.\n";
 			}
 		}
 	}else{
@@ -529,14 +630,14 @@ sub main
 #
 #	Note:
 #		Only useful for capture, learn, or monitor modes. Any option specified 
-#		on the command line overwrites the corresponding configuration option.
+#		on the command line overrides the corresponding configuration option.
 # Post:
 #	Reference filled with option values or dies on error (can't open for read)
 sub read_config
 {
 	my ($config_file, $arg) = @_;
 
-	open(FH_IN, $config_file) || die "Error opening file: $config_file. $!\n";
+	open(FH_IN, $config_file) || die "ERROR: Error opening file: $config_file. $!\n";
 	while(<FH_IN>)
 	{	
 		next if($_ =~ m/^\s$/g || $_ =~ m/^#/);
@@ -585,9 +686,9 @@ sub list_interfaces
 		}
 	}else{
 		if(defined($error)){
-			die "Unable to list any network devices - $error\n";
+			die "ERROR: Unable to list any network devices - $error\n";
 		}else{
-			die "Unable to list any network devices - Unknown error.\n";
+			die "ERROR: Unable to list any network devices - Unknown error.\n";
 		}
 	}
 }
@@ -607,9 +708,9 @@ sub get_default_interface
     	$$device = Net::Pcap::lookupdev(\$error);
     	if(!defined($$device)){
     		if(defined($error)){
-				die "Unable to determine a default network device - $error\n";
+				die "ERROR: Unable to determine a default network device - $error\n";
 			}else{
-				die "Unable to determine a default network device - Unknown error.\n";
+				die "ERROR: Unable to determine a default network device - Unknown error.\n";
 			}
 		}
 	}
@@ -683,7 +784,7 @@ sub create_device
 		$read_timeout, \$error);
 		
 	unless(defined($device)){
-    	die "failed. $error\n";
+    	die "ERROR: failed. $error\n";
 	}
 	
 	$$pcap = $device; 
@@ -811,6 +912,20 @@ sub capture
     		}
     		next if(! $match);
     	}
+    	my %g_loc_src = ();
+    	my @g_ip4_src = ();
+    	my %g_loc_dst = ();
+    	my @g_ip4_dst = ();
+    	if($arg->{do_geo_src}){
+    		my ($ip) = $traffic =~ m/(.*?):\d{1,5}\s+>.*$/;
+    		geo_lookup($ip, $arg->{geo_src_info_flag}, $arg->{geo_db_src_file}, 
+    			\%g_loc_src, \@g_ip4_src);
+    	}
+    	if($arg->{do_geo_dst}){
+    		my ($ip) = $traffic =~ m/.*>\s+(.*?):\d{1,5}$/;
+    		geo_lookup($ip, $arg->{geo_dst_info_flag}, $arg->{geo_db_dst_file}, 
+    			\%g_loc_dst, \@g_ip4_dst);
+    	}
 		if(($packet_max > 0) && ($packet_count >= $packet_max)){
 			$ucount = keys(%data) if($arg->{do_unique});
 			print STDERR "\nTotal packets:\n";
@@ -820,17 +935,115 @@ sub capture
 			last;
 		}else{
 			if($arg->{do_unique}){
-				if($arg->{do_packet_detail}){
-					print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
-				}else{
-					print "$traffic\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
+				if($arg->{do_stdout} && ! exists($data{$traffic})){
+					if($arg->{do_packet_detail}){
+						print "$traffic|$hdr|$tcp_flag";
+					}else{
+						print "$traffic";
+					}
+					if($arg->{do_geo_src}){
+						 if($arg->{geo_src_info_flag} == 1){
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								$g_loc_src{continent_code}, $g_loc_src{country_code3}, 
+								$g_loc_src{country_name}, $g_loc_src{city}, 
+								$g_loc_src{region_name}, $g_loc_src{postal_code}, 
+								$g_loc_src{latitude}, $g_loc_src{longitude}, 
+								$g_loc_src{time_zone}, $g_loc_src{area_code}, 
+								$g_loc_src{metro_code});
+						}elsif($arg->{geo_src_info_flag} == 2){
+							printf("|%s|%s|%s|%s", $g_ip4_src[0], $g_ip4_src[1], 
+								$g_ip4_src[2], $g_ip4_src[3]);
+						}else{
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								$g_loc_src{continent_code}, $g_loc_src{country_code3}, 
+								$g_loc_src{country_name}, $g_loc_src{city}, 
+								$g_loc_src{region_name}, $g_loc_src{postal_code}, 
+								$g_loc_src{latitude}, $g_loc_src{longitude}, 
+								$g_loc_src{time_zone}, $g_loc_src{area_code}, 
+								$g_loc_src{metro_code}, $g_ip4_src[0], $g_ip4_src[1], 
+								$g_ip4_src[2], $g_ip4_src[3]);	
+						}
+					}
+					if($arg->{do_geo_dst}){
+						 if($arg->{geo_dst_info_flag} == 1){
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								$g_loc_dst{continent_code}, $g_loc_dst{country_code3}, 
+								$g_loc_dst{country_name}, $g_loc_dst{city}, 
+								$g_loc_dst{region_name}, $g_loc_dst{postal_code}, 
+								$g_loc_dst{latitude}, $g_loc_dst{longitude}, 
+								$g_loc_dst{time_zone}, $g_loc_dst{area_code}, 
+								$g_loc_dst{metro_code});
+						}elsif($arg->{geo_dst_info_flag} == 2){
+							printf("|%s|%s|%s|%s", $g_ip4_dst[0], $g_ip4_dst[1], 
+								$g_ip4_dst[2], $g_ip4_dst[3])
+						}else{
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								$g_loc_dst{continent_code}, $g_loc_dst{country_code3}, 
+								$g_loc_dst{country_name}, $g_loc_dst{city}, 
+								$g_loc_dst{region_name}, $g_loc_dst{postal_code}, 
+								$g_loc_dst{latitude}, $g_loc_dst{longitude}, 
+								$g_loc_dst{time_zone}, $g_loc_dst{area_code}, 
+								$g_loc_dst{metro_code}, $g_ip4_dst[0], $g_ip4_dst[1], 
+								$g_ip4_dst[2], $g_ip4_dst[3]);	
+						}
+					}
+					print "\n";
 				}
 				$data{$traffic}++;
 			}else{
-				if($arg->{do_packet_detail}){
-					print "$traffic|$hdr|$tcp_flag\n" if($arg->{do_stdout} && ! exists($data{$traffic}));
-				}else{
-					print "$traffic\n" if($arg->{do_stdout});
+				if($arg->{do_stdout}){
+					if($arg->{do_packet_detail}){
+						print "$traffic|$hdr|$tcp_flag\n";
+					}else{
+						print "$traffic\n";
+					}
+					if($arg->{do_geo_src}){
+						if($arg->{geo_src_info_flag} == 1){
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								$g_loc_src{continent_code}, $g_loc_src{country_code3}, 
+								$g_loc_src{country_name}, $g_loc_src{city}, 
+								$g_loc_src{region_name}, $g_loc_src{postal_code}, 
+								$g_loc_src{latitude}, $g_loc_src{longitude}, 
+								$g_loc_src{time_zone}, $g_loc_src{area_code}, 
+								$g_loc_src{metro_code});
+						}elsif($arg->{geo_src_info_flag} == 2){
+							printf("|%s|%s|%s|%s", $g_ip4_src[0], $g_ip4_src[1], 
+								$g_ip4_src[2], $g_ip4_src[3]);
+						}else{
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								$g_loc_src{continent_code}, $g_loc_src{country_code3}, 
+								$g_loc_src{country_name}, $g_loc_src{city}, 
+								$g_loc_src{region_name}, $g_loc_src{postal_code}, 
+								$g_loc_src{latitude}, $g_loc_src{longitude}, 
+								$g_loc_src{time_zone}, $g_loc_src{area_code}, 
+								$g_loc_src{metro_code}, $g_ip4_src[0], $g_ip4_src[1], 
+								$g_ip4_src[2], $g_ip4_src[3]);	
+						}
+					}
+					if($arg->{do_geo_dst}){
+						if($arg->{geo_dst_info_flag} == 1){
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								$g_loc_dst{continent_code}, $g_loc_dst{country_code3}, 
+								$g_loc_dst{country_name}, $g_loc_dst{city}, 
+								$g_loc_dst{region_name}, $g_loc_dst{postal_code}, 
+								$g_loc_dst{latitude}, $g_loc_dst{longitude}, 
+								$g_loc_dst{time_zone}, $g_loc_dst{area_code}, 
+								$g_loc_dst{metro_code});
+						}elsif($arg->{geo_dst_info_flag} == 2){
+							printf("|%s|%s|%s|%s", $g_ip4_dst[0], $g_ip4_dst[1], 
+								$g_ip4_dst[2], @g_ip4_dst[3])
+						}else{
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								$g_loc_dst{continent_code}, $g_loc_dst{country_code3}, 
+								$g_loc_dst{country_name}, $g_loc_dst{city}, 
+								$g_loc_dst{region_name}, $g_loc_dst{postal_code}, 
+								$g_loc_dst{latitude}, $g_loc_dst{longitude}, 
+								$g_loc_dst{time_zone}, $g_loc_dst{area_code}, 
+								$g_loc_dst{metro_code}, $g_ip4_dst[0], $g_ip4_dst[1], 
+								$g_ip4_dst[2], $g_ip4_dst[3]);	
+						}
+					}
+					print "\n";
 				}
 				$data{$packet_count} = $traffic;
 			}
@@ -859,11 +1072,11 @@ sub build_capture_filter
 	
 	$result = Net::Pcap::pcap_compile($pcap, \$filter, $str, $optimize, $netmask);
 	
-	die "Unable to compile filter: \"$str\" $!\n" if($result == -1);
+	die "ERROR: Unable to compile filter: \"$str\" $!\n" if($result == -1);
 	
 	Net::Pcap::pcap_setfilter($pcap, $filter);
 	
-	die "Unable to set filter: \"$str\"\n" unless(defined($filter));
+	die "ERROR: Unable to set filter: \"$str\"\n" unless(defined($filter));
 	
 	return $filter;
 	
@@ -984,6 +1197,227 @@ sub get_capture_packet
 	$$total_packet_count++;
 }
 # Name:
+#	geo_lookup
+# Pre:
+#	$ 	= scalar representing the IPv4 address to lookup
+#	$ 	= scalar representing bit mask for a lookup
+#	$ 	= scalar representing the GEO DB location and file 
+#	\%	= reference to a hash representing GEO location information
+#	\@	= reference to an array representing GEO IPv4 information
+#
+#	If an IP matches any of the following, it is ignored for a lookup:
+#		"Private Use" IP addresses:
+#			10.0.0.0 - 10.255.255.255
+#			172.16.0.0 - 172.31.255.255
+#			192.168.0.0 - 192.168.255.255
+#		"Multicast" IP addresses:
+#			224.0.0.0 to 239.255.255.255
+#		"Broadcast" IP addresses:
+#			255.255.255.255
+#		"Autoconfiguration" IP Addresses:
+#			169.254.0.0 - 169.254.255.255
+#		"Loopback" IP addresses:
+#			127.0.0.0 - 127.255.255.255
+#	The bit mask for determining lookups is as follows:
+#		1 = lookup location information (GEO_LOC_INFO)
+#		2 = lookup IPv4 information (GEO_IP4_INFO)
+#		3 = lookup location/IPv4 information (GEO_LOC_INFO | GEO_IP4_INFO)
+#	The location array is filled as follows:
+#		0 = continent code
+#		1 = country code (three character)
+#		2 = country name
+#		3 = city
+#		4 = region name
+#		5 = postal code
+#		6 = latitude
+#		7 = longitude
+#		8 = time zone
+#		9 = area code
+#		10 = metro code
+#	The IPv4 array is filled as follows:
+#		0 = IPv4 range minimum
+#		1 = IPv4 range maximum
+#		2 = IPv4 mask
+#		3 = IPv4 CIDR
+# Post:
+#	GEO DB information returned or exits on error
+sub geo_lookup
+{
+	my ($ip, $g_mask, $g_db, $g_loc, $g_ip4) = @_;
+		
+	my $gi = Geo::IP->open($g_db, GEOIP_MEMORY_CACHE | GEOIP_CHECK_CACHE);
+	$rec = $gi->record_by_addr($ip);
+     
+	if($g_mask == 1){
+		if($ip =~ m/^((10\.\d{1,3}\.\d{1,3}\.\d{1,3}) |
+					(172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}) |
+					(192\.168\.\d{1,3}\.\d{1,3}))$/x){
+			$g_loc->{continent_code} = "PU_continent_code";
+			$g_loc->{country_code3} = "PU_country_code3";
+			$g_loc->{country_name} = "PU_country_name";
+			$g_loc->{city} = "PU_city";
+			$g_loc->{region_name} = "PU_region_name";
+			$g_loc->{postal_code} = "PU_postal_code";
+			$g_loc->{latitude} = "PU_latitude";
+			$g_loc->{longitude} = "PU_longitude";
+			$g_loc->{time_zone} = "PU_time_zone";
+			$g_loc->{area_code} = "PU_area_code";
+			$g_loc->{metro_code} = "PU_metro_code";
+		}elsif($ip =~ m/^(22[4-9]|23[0-9])\.\d{1,3}\.\d{1,3}\.\d{1,3}$/){	
+			$g_loc->{continent_code} = "MC_continent_code";
+			$g_loc->{country_code3} = "MC_country_code3";
+			$g_loc->{country_name} = "MC_country_name";
+			$g_loc->{city} = "MC_city";
+			$g_loc->{region_name} = "MC_region_name";
+			$g_loc->{postal_code} = "MC_postal_code";
+			$g_loc->{latitude} = "MC_latitude";
+			$g_loc->{longitude} = "MC_longitude";
+			$g_loc->{time_zone} = "MC_time_zone";
+			$g_loc->{area_code} = "MC_area_code";
+			$g_loc->{metro_code} = "MC_metro_code";
+		}elsif($ip =~ m/^255\.255\.255\.255$/){
+			$g_loc->{continent_code} = "BC_continent_code";
+			$g_loc->{country_code3} = "BC_country_code3";
+			$g_loc->{country_name} = "BC_country_name";
+			$g_loc->{city} = "BC_city";
+			$g_loc->{region_name} = "BC_region_name";
+			$g_loc->{postal_code} = "BC_postal_code";
+			$g_loc->{latitude} = "BC_latitude";
+			$g_loc->{longitude} = "BC_longitude";
+			$g_loc->{time_zone} = "BC_time_zone";
+			$g_loc->{area_code} = "BC_area_code";
+			$g_loc->{metro_code} = "BC_metro_code";
+		}elsif($ip =~ m/^169\.254\.\d{1,3}\.\d{1,3}$/){
+			$g_loc->{continent_code} = "AC_continent_code";
+			$g_loc->{country_code3} = "AC_country_code3";
+			$g_loc->{country_name} = "AC_country_name";
+			$g_loc->{city} = "AC_city";
+			$g_loc->{region_name} = "AC_region_name";
+			$g_loc->{postal_code} = "AC_postal_code";
+			$g_loc->{latitude} = "AC_latitude";
+			$g_loc->{longitude} = "AC_longitude";
+			$g_loc->{time_zone} = "AC_time_zone";
+			$g_loc->{area_code} = "AC_area_code";
+			$g_loc->{metro_code} = "AC_metro_code";
+		}elsif($ip =~ m/^127.\d{1,3}\.\d{1,3}\.\d{1,3}$/){
+			$g_loc->{continent_code} = "LB_continent_code";
+			$g_loc->{country_code3} = "LB_country_code3";
+			$g_loc->{country_name} = "LB_country_name";
+			$g_loc->{city} = "LB_city";
+			$g_loc->{region_name} = "LB_region_name";
+			$g_loc->{postal_code} = "LB_postal_code";
+			$g_loc->{latitude} = "LB_latitude";
+			$g_loc->{longitude} = "LB_longitude";
+			$g_loc->{time_zone} = "LB_time_zone";
+			$g_loc->{area_code} = "LB_area_code";
+			$g_loc->{metro_code} = "LB_metro_code";
+		}else{
+			$g_loc->{continent_code} = ($rec->{continent_code}) ? $rec->{continent_code} : "NULL";
+			$g_loc->{country_code3} = ($rec->{country_code3}) ? $rec->{country_code3} : "NULL";
+			$g_loc->{country_name} = ($rec->{country_name}) ? $rec->{country_name} : "NULL";
+			$g_loc->{city} = ($rec->{city}) ? $rec->{city} : "NULL";
+			$g_loc->{region_name} = ($rec->{region_name}) ? $rec->{region_name} : "NULL";
+			$g_loc->{postal_code} = ($rec->{postal_code}) ? $rec->{postal_code} : "NULL";
+			$g_loc->{latitude} = ($rec->{latitude}) ? $rec->{latitude} : "NULL";
+			$g_loc->{longitude} = ($rec->{longitude}) ? $rec->{longitude} : "NULL";
+			$g_loc->{time_zone} = ($rec->time_zone) ? $rec->time_zone : "NULL";
+			$g_loc->{area_code} = ($rec->{area_code}) ? $rec->{area_code} : "NULL";
+			$g_loc->{metro_code} = ($rec->{metro_code}) ? $rec->{metro_code} : "NULL";
+		}
+	}elsif($g_mask == 2){
+		my ($from, $to) = $gi->range_by_ip($ip);
+		my $range = "$from-$to";
+		my @cidr = Net::CIDR::range2cidr($range);
+		my $block = Net::Netmask->new($cidr[0]);
+		my $mask = $block->mask();
+		(@{$g_ip4}) = ($from, $to, $mask, $cidr[0]);
+	}elsif($g_mask == 3){
+		if($ip =~ m/^((10\.\d{1,3}\.\d{1,3}\.\d{1,3}) |
+					(172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}) |
+					(192\.168\.\d{1,3}\.\d{1,3}))$/x){
+			$g_loc->{continent_code} = "PU_continent_code";
+			$g_loc->{country_code3} = "PU_country_code3";
+			$g_loc->{country_name} = "PU_country_name";
+			$g_loc->{city} = "PU_city";
+			$g_loc->{region_name} = "PU_region_name";
+			$g_loc->{postal_code} = "PU_postal_code";
+			$g_loc->{latitude} = "PU_latitude";
+			$g_loc->{longitude} = "PU_longitude";
+			$g_loc->{time_zone} = "PU_time_zone";
+			$g_loc->{area_code} = "PU_area_code";
+			$g_loc->{metro_code} = "PU_metro_code"
+		}elsif($ip =~ m/^(22[4-9]|23[0-9])\.\d{1,3}\.\d{1,3}\.\d{1,3}$/){	
+			$g_loc->{continent_code} = "MC_continent_code";
+			$g_loc->{country_code3} = "MC_country_code3";
+			$g_loc->{country_name} = "MC_country_name";
+			$g_loc->{city} = "MC_city";
+			$g_loc->{region_name} = "MC_region_name";
+			$g_loc->{postal_code} = "MC_postal_code";
+			$g_loc->{latitude} = "MC_latitude";
+			$g_loc->{longitude} = "MC_longitude";
+			$g_loc->{time_zone} = "MC_time_zone";
+			$g_loc->{area_code} = "MC_area_code";
+			$g_loc->{metro_code} = "MC_metro_code";
+		}elsif($ip =~ m/^255\.255\.255\.255$/){
+			$g_loc->{continent_code} = "BC_continent_code";
+			$g_loc->{country_code3} = "BC_country_code3";
+			$g_loc->{country_name} = "BC_country_name";
+			$g_loc->{city} = "BC_city";
+			$g_loc->{region_name} = "BC_region_name";
+			$g_loc->{postal_code} = "BC_postal_code";
+			$g_loc->{latitude} = "BC_latitude";
+			$g_loc->{longitude} = "BC_longitude";
+			$g_loc->{time_zone} = "BC_time_zone";
+			$g_loc->{area_code} = "BC_area_code";
+			$g_loc->{metro_code} = "BC_metro_code";
+		}elsif($ip =~ m/^169\.254\.\d{1,3}\.\d{1,3}$/){
+			$g_loc->{continent_code} = "AC_continent_code";
+			$g_loc->{country_code3} = "AC_country_code3";
+			$g_loc->{country_name} = "AC_country_name";
+			$g_loc->{city} = "AC_city";
+			$g_loc->{region_name} = "AC_region_name";
+			$g_loc->{postal_code} = "AC_postal_code";
+			$g_loc->{latitude} = "AC_latitude";
+			$g_loc->{longitude} = "AC_longitude";
+			$g_loc->{time_zone} = "AC_time_zone";
+			$g_loc->{area_code} = "AC_area_code";
+			$g_loc->{metro_code} = "AC_metro_code";
+		}elsif($ip =~ m/^127.\d{1,3}\.\d{1,3}\.\d{1,3}$/){
+			$g_loc->{continent_code} = "LB_continent_code";
+			$g_loc->{country_code3} = "LB_country_code3";
+			$g_loc->{country_name} = "LB_country_name";
+			$g_loc->{city} = "LB_city";
+			$g_loc->{region_name} = "LB_region_name";
+			$g_loc->{postal_code} = "LB_postal_code";
+			$g_loc->{latitude} = "LB_latitude";
+			$g_loc->{longitude} = "LB_longitude";
+			$g_loc->{time_zone} = "LB_time_zone";
+			$g_loc->{area_code} = "LB_area_code";
+			$g_loc->{metro_code} = "LB_metro_code";
+		}else{
+			$g_loc->{continent_code} = ($rec->{continent_code}) ? $rec->{continent_code} : "NULL";
+			$g_loc->{country_code3} = ($rec->{country_code3}) ? $rec->{country_code3} : "NULL";
+			$g_loc->{country_name} = ($rec->{country_name}) ? $rec->{country_name} : "NULL";
+			$g_loc->{city} = ($rec->{city}) ? $rec->{city} : "NULL";
+			$g_loc->{region_name} = ($rec->{region_name}) ? $rec->{region_name} : "NULL";
+			$g_loc->{postal_code} = ($rec->{postal_code}) ? $rec->{postal_code} : "NULL";
+			$g_loc->{latitude} = ($rec->{latitude}) ? $rec->{latitude} : "NULL";
+			$g_loc->{longitude} = ($rec->{longitude}) ? $rec->{longitude} : "NULL";
+			$g_loc->{time_zone} = ($rec->time_zone) ? $rec->time_zone : "NULL";
+			$g_loc->{area_code} = ($rec->{area_code}) ? $rec->{area_code} : "NULL";
+			$g_loc->{metro_code} = ($rec->{metro_code}) ? $rec->{metro_code} : "NULL";
+		}
+		my ($from, $to) = $gi->range_by_ip($ip);
+		my $range = "$from-$to";
+		my @cidr = Net::CIDR::range2cidr($range);
+		my $block = Net::Netmask->new($cidr[0]);
+		my $mask = $block->mask();
+		(@{$g_ip4}) = ($from, $to, $mask, $cidr[0]);
+	}else{
+		die "ERROR: Unexpected GEO mask received: $g_mask\n";
+	}
+}
+# Name:
 #	write_capture_data
 # Pre:
 #	$ 	= scalar representing the file to write the data to
@@ -1007,7 +1441,7 @@ sub write_capture_data
 		print STDERR "Writing packets to $cfile... ";
 	}
 	
-	open(FH_OUT, ">$cfile") || die "Error opening file: $cfile. $!\n";
+	open(FH_OUT, ">$cfile") || die "ERROR: Error opening file: $cfile. $!\n";
 	foreach(keys %{$data})
 	{
 		if($do_unique){
@@ -1059,7 +1493,7 @@ sub sort_learned
 	}
 	
 	#backup original
-	open(FH_OUT, ">$bu_file") || die "Error opening file: $bu_file for write. $!\n";
+	open(FH_OUT, ">$bu_file") || die "ERROR: Error opening file: $bu_file for write. $!\n";
 	print "Backing up learned data... ";
 	foreach(@{$comments})
 	{
@@ -1073,7 +1507,7 @@ sub sort_learned
 	close(FH_OUT);
 	
 	#re-create original
-	open(FH_OUT, ">$lfile") || die "Error opening file: $lfile for write. $!\n";
+	open(FH_OUT, ">$lfile") || die "ERROR: Error opening file: $lfile for write. $!\n";
 	print "Sorting learned data... ";
 	foreach(@{$comments})
 	{
@@ -1419,7 +1853,7 @@ sub get_learned
 	}
 	
 	if($duplicates > 0){
-		die "\nNumber of issues to fix: $duplicates\nPlease rectify and try again. Quitting.\n";
+		die "ERROR: \nNumber of issues to fix: $duplicates\nPlease rectify and try again. Quitting.\n";
 	}else{
 		if($learned_lines == 0){
 			print STDERR "\n[Expected format]:\n\n";
@@ -1463,7 +1897,7 @@ sub get_learned
 			print STDERR "\n\n", "=" x 50, "\n\n";
 			print STDERR "\t\t[ISSUE FOUND AT]:";
 			print STDERR "\nLine $learn_issue\n";
-			die "Please rectify this issue and try again. Quitting.\n";
+			die "ERROR: Please rectify this issue and try again. Quitting.\n";
 		}else{
 			$$total_learned = $learned_lines;
 		}
@@ -1774,7 +2208,7 @@ sub learn
 				print STDERR "review-file-name\n";
 				print STDERR "./relative/path/to/review-file-name\n";
 				print STDERR "/absolute/path/to/review-file-name\n\n";
-				die "Unable to save $packet to:\n$review_file. $!\n";
+				die "ERROR: Unable to save $packet to:\n$review_file. $!\n";
 			}
 			print "\nTraffic saved. Press any key to continue.\n";
 			<STDIN>;
@@ -1887,7 +2321,7 @@ sub load_captured_packets
 		}
 		close(FH_IN);
 	}else{
-		die "nothing valid to read.\nTry capturing and try this mode again.\n";
+		die "ERROR: nothing valid to read.\nTry capturing and try this mode again.\n";
 	}
 	
 	if($$cap_lines == 0){
@@ -1896,7 +2330,7 @@ sub load_captured_packets
 		print STDERR "Expected format per line: IP_SRC_ADDRESS:Port > IP_DST_ADDRESS:Port\n";
 		print STDERR "\nExample:\n192.168.0.10:58130 > 192.168.0.20:8080\n";
 		print STDERR "192.168.0.20:8080 > 192.168.0.10:58130\n";
-		die "\nTry another capture. Quitting.\n";		
+		die "ERROR: \nTry another capture. Quitting.\n";		
 	}else{
 		if($cap_invalid_lines > 0){
 			print STDERR "found some issues.\n";
@@ -2398,9 +2832,9 @@ sub write_learn_data
 	my $dst = "$parsed_packet->[2]:$parsed_packet->[3]";
 
 	if(-e $lfile){
-		open(FH_OUT, ">>$lfile") || die "\nUnable to open and append to $lfile. $!\n";
+		open(FH_OUT, ">>$lfile") || die "ERROR: \nUnable to open and append to $lfile. $!\n";
 	}else{
-		open(FH_OUT, ">$lfile") || die "\nUnable to create $lfile. $!\n";
+		open(FH_OUT, ">$lfile") || die "ERROR: \nUnable to create $lfile. $!\n";
 	}
 	
 	#learn original
@@ -2444,14 +2878,14 @@ sub daemonize
 	my ($pid, $efile, $open_err_file) = @_;
 	my $ppid = $$pid;
     
-    open STDIN, '/dev/null'  or die "Unable to read (STDIN) from /dev/null. Aborting. $!\n";
-    open STDOUT, '>>/dev/null' or die "Can't write (STDOUT) to /dev/null. Aborting. $!\n";
-    open STDERR, ">>$efile" or die "Can't write (STDERR) to $efile. Aborting. $!\n";
+    open STDIN, '/dev/null'  or die "ERROR: Unable to read (STDIN) from /dev/null. Aborting. $!\n";
+    open STDOUT, '>>/dev/null' or die "ERROR: Can't write (STDOUT) to /dev/null. Aborting. $!\n";
+    open STDERR, ">>$efile" or die "ERROR: Can't write (STDERR) to $efile. Aborting. $!\n";
     
-    defined($ppid = fork()) or die "Unable to fork - ensure this is supported. Aborting. $!\n";
+    defined($ppid = fork()) or die "ERROR: Unable to fork - ensure this is supported. Aborting. $!\n";
     exit if $ppid;
     
-    setsid or die "Unable to start a new session. Aborting. $!";
+    setsid or die "ERROR: Unable to start a new session. Aborting. $!";
     umask 0;
     
     $$pid = $$;
@@ -2503,13 +2937,12 @@ sub monitor_server
 	my $total_keys = 0;
 	my $total_count = 0;
 	my $record_id = 0;
-	my $hdr,
-	my $tcp_flag,
 	my $usr_sig = 0;
 	my $socket;
 	my $packet_count = 0;
 	my $notify_message;
 	my $log_msg;
+	my $client_msg;
 	my @dt;
 	my @remaining_cache;
 	my %packet_data = (
@@ -2849,7 +3282,7 @@ sub monitor_server
 										Proto     => $protocol,
 										Reuse     => 1
 									);
-	die "$!: $arg->{name} can't start server $arg->{host}:$arg->{port} ($protocol)\n" 
+	die "ERROR: $!: $arg->{name} can't start server $arg->{host}:$arg->{port} ($protocol)\n" 
 		unless($socket);
 	
 	#server running
@@ -2874,52 +3307,27 @@ sub monitor_server
 		}
 		$date = localtime();
 		chomp($packet);
-		($arg->{do_packet_detail}, $packet, $record_id, $hdr, $tcp_flag) = split(/\|/, $packet);
-		$seen = build_cache($packet, \%packet_data, $date, $record_id, $arg->{do_cache_key_dst}, 
-					\$src, \$dst);
+		($packet, $client_msg) = split(/\|/, $packet, 2);
+		$seen = build_cache($packet, \%packet_data, $date, $record_id, 
+			$arg->{do_cache_key_dst}, \$src, \$dst);
 		if(! $seen){
 			if($arg->{do_log}){
 				$date = localtime();
 				$log_msg = "Client Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
 				if($arg->{do_cache_key_dst}){
 					my $peer = $socket->peerhost.":".$socket->peerport;
-					if($arg->{do_packet_detail}){
-						$log_msg .= "$peer|$protocol|$src > $dst|$record_id|$hdr|$tcp_flag\n";
-					}else{
-						$log_msg .= "$peer|$protocol|$src > $dst|$record_id\n";
-					}
+					$log_msg .= "$peer|$protocol|$src > $dst";
 				}else{
-					if($arg->{do_packet_detail}){
-						$log_msg .= "$peer|$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
-					}else{
-						$log_msg .= "$peer|$protocol|$packet|$record_id\n";
-					}
+					$log_msg .= "$peer|$protocol|$packet";
 				}
+				$log_msg .= "|$client_msg\n";
 				log_message($log_msg, $arg->{log_server});
 			}
 			if($arg->{do_stdout}){
-				if($arg->{do_cache_key_dst}){
-					$packet = "$src > $dst";
-					if($arg->{do_packet_detail}){
-						printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s|%s|%s\n", $date, $arg->{name}, 
-							$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
-							$protocol, $packet, $record_id, $hdr, $tcp_flag);
-					}else{
-						printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, $arg->{name}, 
-							$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
-							$protocol, $packet, $record_id);
-					}
-				}else{
-					if($arg->{do_packet_detail}){
-						printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s|%s|%s\n", $date, $arg->{name}, 
-							$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
-							$protocol, $packet, $record_id, $hdr, $tcp_flag);
-					}else{
-						printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, $arg->{name}, 
-							$pid, $arg->{host}, $arg->{port}, $socket->peerhost, $socket->peerport, 
-							$protocol, $packet, $record_id);
-					}
-				}
+				$packet = "$src > $dst" if($arg->{do_cache_key_dst});
+				printf("Client Message|%s|%s|%s|%s:%d < %s:%d|%s|%s|%s\n", $date, 
+					$arg->{name}, $pid, $arg->{host}, $arg->{port}, $socket->peerhost, 
+					$socket->peerport, $protocol, $packet, $client_msg);
 			}
 			if($arg->{packet_count} > 0){
 				++$packet_count;
@@ -3074,7 +3482,7 @@ sub monitor_server
 #	Finished monitoring as a client or error has occurred
 sub monitor_client
 {
-	my ($arg, $pid, $learned) = @_;
+	my ($arg, $pid, $learned, $total_learned) = @_;
 	my $TIME_OUT = 25;
 	my $protocol = "udp";
 	my $usr_sig = 0;
@@ -3094,6 +3502,7 @@ sub monitor_client
 	my $record_id = 0;
 	my $match = 0;
 	my $log_msg;
+	my  $client_msg;
 	my %data;
 	my $ucount = ($arg->{do_unique} == 0) ? "Not enabled" : 0;
 	my $packet_max = ($arg->{packet_count} == 0) ? "Indefinite amount" : $arg->{packet_count};
@@ -3179,7 +3588,7 @@ sub monitor_client
 										PeerPort  => $arg->{port},
 										Proto     => $protocol
 									);
-	die "$!: $arg->{name} can't connect $arg->{host}:$arg->{port} ($protocol)\n" unless($socket);
+	die "ERROR: $!: $arg->{name} can't connect $arg->{host}:$arg->{port} ($protocol)\n" unless($socket);
 	$socket->autoflush(1);			
 	
 	#client connected
@@ -3217,7 +3626,6 @@ sub monitor_client
 	}
 	
 	#get initial learned record count
-	$total_learned = keys(%{$learned});
 	if($arg->{do_log}){
 		$date = localtime();
 		$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
@@ -3299,6 +3707,20 @@ sub monitor_client
     		next if($packet !~ m/$arg->{regex_cap}/i);
     	}
     	$date = localtime();
+    	my %g_loc_src = ();
+    	my @g_ip4_src = ();
+    	my %g_loc_dst = ();
+    	my @g_ip4_dst = ();
+    	if($arg->{do_geo_src}){
+    		my ($ip) = $packet =~ m/(.*?):\d{1,5}\s+>.*$/;
+    		geo_lookup($ip, $arg->{geo_src_info_flag}, $arg->{geo_db_src_file}, 
+    			\%g_loc_src, \@g_ip4_src);
+    	}
+    	if($arg->{do_geo_dst}){
+    		my ($ip) = $packet =~ m/.*>\s+(.*?):\d{1,5}$/;
+    		geo_lookup($ip, $arg->{geo_dst_info_flag}, $arg->{geo_db_dst_file}, 
+    			\%g_loc_dst, \@g_ip4_dst);
+    	}
 		if(($packet_max > 0) && ($packet_count >= $packet_max)){
 			$ucount = keys(%data) if($arg->{do_unique});
 			if($arg->{do_log}){
@@ -3320,67 +3742,81 @@ sub monitor_client
 			}
 			last;
 		}else{
+			$client_msg = "$packet|$record_id";
+			if($arg->{do_packet_detail}){
+				 $client_msg .= "|$hdr|$tcp_flag";
+			}
+			if($arg->{do_geo_src}){
+				 if($arg->{geo_src_info_flag} == 1){
+					 $client_msg .= "|$g_loc_src{continent_code}|$g_loc_src{country_code3}";
+					 $client_msg .= "|$g_loc_src{country_name}|$g_loc_src{city}";
+					 $client_msg .= "|$g_loc_src{region_name}|$g_loc_src{postal_code}";
+					 $client_msg .= "|$g_loc_src{latitude}|$g_loc_src{longitude}";
+					 $client_msg .= "|$g_loc_src{time_zone}|$g_loc_src{area_code}";
+					 $client_msg .= "|$g_loc_src{metro_code}";
+				 }elsif($arg->{geo_src_info_flag} == 2){
+					 $client_msg .= "|$g_ip4_src[0]|$g_ip4_src[1]|$g_ip4_src[2]|$g_ip4_src[3]";
+				 }else{
+					 $client_msg .= "|$g_loc_src{continent_code}|$g_loc_src{country_code3}";
+					 $client_msg .= "|$g_loc_src{country_name}|$g_loc_src{city}";
+					 $client_msg .= "|$g_loc_src{region_name}|$g_loc_src{postal_code}";
+					 $client_msg .= "|$g_loc_src{latitude}|$g_loc_src{longitude}";
+					 $client_msg .= "|$g_loc_src{time_zone}|$g_loc_src{area_code}";
+					 $client_msg .= "|$g_loc_src{metro_code}";
+					 $client_msg .= "|$g_ip4_src[0]|$g_ip4_src[1]|$g_ip4_src[2]|$g_ip4_src[3]";
+				 }
+			}
+			if($arg->{do_geo_dst}){
+				 if($arg->{geo_dst_info_flag} == 1){
+					 $client_msg .= "|$g_loc_dst{continent_code}|$g_loc_dst{country_code3}";
+					 $client_msg .= "|$g_loc_dst{country_name}|$g_loc_dst{city}";
+					 $client_msg .= "|$g_loc_dst{region_name}|$g_loc_dst{postal_code}";
+					 $client_msg .= "|$g_loc_dst{latitude}|$g_loc_dst{longitude}";
+					 $client_msg .= "|$g_loc_dst{time_zone}|$g_loc_dst{area_code}";
+					 $client_msg .= "|$g_loc_dst{metro_code}";
+				 }elsif($arg->{geo_dst_info_flag} == 2){
+					 $client_msg .= "|$g_ip4_dst[0]|$g_ip4_dst[1]|$g_ip4_dst[2]|$g_ip4_dst[3]";
+				 }else{
+					 $client_msg .= "|$g_loc_dst{continent_code}|$g_loc_dst{country_code3}";
+					 $client_msg .= "|$g_loc_dst{country_name}|$g_loc_dst{city}";
+					 $client_msg .= "|$g_loc_dst{region_name}|$g_loc_dst{postal_code}";
+					 $client_msg .= "|$g_loc_dst{latitude}|$g_loc_dst{longitude}";
+					 $client_msg .= "|$g_loc_dst{time_zone}|$g_loc_dst{area_code}";
+					 $client_msg .= "|$g_loc_dst{metro_code}";
+					 $client_msg .= "|$g_ip4_dst[0]|$g_ip4_dst[1]|$g_ip4_dst[2]|$g_ip4_dst[3]";
+				 }
+			}
 			if($arg->{do_unique}){
 				if(! exists($data{$packet})){
 					if($arg->{do_stdout}){
-						if($arg->{do_packet_detail}){
-							printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s|%s\n", $date, 
-									$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
-									$protocol, $packet, $record_id, $hdr, $tcp_flag);
-						}else{
-							printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s\n", $date, 
-									$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
-									$protocol, $packet, $record_id);
-						}
+						printf("Server Message|%s|%s|%d|%s:%d|%s|%s\n", $date, 
+							$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+							$protocol, $client_msg);
 					}
 					if($arg->{do_log}){
 						$date = localtime();
-						$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-						if($arg->{do_packet_detail}){
-							$log_msg .= "$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
-						}else{
-							$log_msg .= "$protocol|$packet|$record_id\n";
-						}
+						$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol|";
+						$log_msg .= "$client_msg\n";
 						log_message($log_msg, $arg->{log_client});
 					}
 				}
-				if($arg->{do_packet_detail}){
-					$socket->send("$arg->{do_packet_detail}|$packet|$record_id|$hdr|$tcp_flag") 
-						or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
-				}else{
-					$socket->send("$arg->{do_packet_detail}|$packet|$record_id") 
-						or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
-				}
+				$socket->send($client_msg) 
+					or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
 				$data{$packet}++;
 			}else{
 				if($arg->{do_stdout}){
-					if($arg->{do_packet_detail}){
-						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s|%s|%s\n", $date, 
-								$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
-								$protocol, $packet, $record_id, $hdr, $tcp_flag);
-					}else{
-						printf("Server Message|%s|%s|%d|%s:%d|%s|%s|%s\n", $date, 
-								$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
-								$protocol, $packet, $record_id);
-					}
+					printf("Server Message|%s|%s|%d|%s:%d|%s|%s\n", $date, 
+						$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+						$protocol, $client_msg);
 				}
 				if($arg->{do_log}){
 					$date = localtime();
-					$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-					if($arg->{do_packet_detail}){
-						$log_msg .= "$protocol|$packet|$record_id|$hdr|$tcp_flag\n";
-					}else{
-						$log_msg .= "$protocol|$packet|$record_id\n";
-					}
+					$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol|";
+					$log_msg .= "$client_msg\n";
 					log_message($log_msg, $arg->{log_client});
 				}
-				if($arg->{do_packet_detail}){
-					$socket->send("$packet|$record_id|$hdr|$tcp_flag") 
-						or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
-				}else{
-					$socket->send("$packet|$record_id") 
-						or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
-				}
+				$socket->send($client_msg) 
+					or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
 				$data{$packet_count} = $packet;
 			}
 		}
@@ -3388,12 +3824,12 @@ sub monitor_client
 		eval{
 				local $SIG{ALRM} = sub {
 										 print STDERR "$!: $protocol alarm timeout with ";
-										 die "$arg->{host}:$arg->{port}\n";
+										 die "ERROR: $arg->{host}:$arg->{port}\n";
 										 };
 				alarm $TIME_OUT;
 				alarm 0;
 				1;  #return value from eval on normalcy
-		} or die "$!: unable to bind to $arg->{host}:$arg->{port}\n";
+		} or die "ERROR: $!: unable to bind to $arg->{host}:$arg->{port}\n";
 	}
 }
 # Name:
@@ -3708,7 +4144,7 @@ sub write_cache
 	my ($packet_data, $total_count, $sort_cache_date, $cache_file, 
 		$do_cache_key_dst, $remaining_cache) = @_;
 	
-	open(FH_OUT, ">$cache_file") || die "Error opening file: $cache_file for write. $!\n";
+	open(FH_OUT, ">$cache_file") || die "ERROR: Error opening file: $cache_file for write. $!\n";
 	if($do_cache_key_dst){
 		if($sort_cache_date){
 			while(my ($dst, $src_row) = each %{$packet_data})
@@ -3930,7 +4366,7 @@ sub log_message
 {
 	my ($message, $log) = @_;
 	
-	open(FH_LOG_OUT, ">>$log") || die "Error opening log: $log. $!\n";
+	open(FH_LOG_OUT, ">>$log") || die "ERROR: Error opening log: $log. $!\n";
 	print FH_LOG_OUT $message;
 	close(FH_LOG_OUT);
 }
@@ -3959,7 +4395,7 @@ sub usage
 {
 	my ($arg) = @_;
 	
-   	die "Invalid input (try: -h or --help).\n" unless($ARGV[0] =~ m/^(\-h|--help)\b/);
+   	die "ERROR: Invalid input (try: -h or --help).\n" unless($ARGV[0] =~ m/^(\-h|--help)\b/);
    	
    	#license
    	print STDERR "\n$arg->{name} copyright (C) 2010-2016 Ray T. Daley (rcdsox\@gmail.com)\n\n";
@@ -3975,8 +4411,7 @@ sub usage
    	print STDERR "\t$arg->{name} [option ...] <command>\n";
    	
    	#commands
-	print STDERR "\n\t[Commands]:\n\n";
-	
+	print STDERR "\n\t[Commands]:\n\n";	
     print STDERR "-c, --capture\n";
     print STDERR "\t# Capture packets from an interface. Useful prior to one\n";
     print STDERR "\t# deciding to learn (see: --learn) or monitoring traffic\n";
@@ -4052,7 +4487,7 @@ sub usage
     print STDERR "-C, --Config [config-file]\n"; 
     print STDERR "\t# Tells $arg->{name} to read <config-file> for user\n";
     print STDERR "\t# options. Any option specified on the command-line will\n";
-    print STDERR "\t# overwrite the configuration option. If <config-file> is\n";
+    print STDERR "\t# override the configuration option. If <config-file> is\n";
     print STDERR "\t# omitted, $arg->{config_file} is used. Useful to use with:\n";
     print STDERR "\t# --capture, --learn, --monitor\n\n";
     print STDERR "-cf, --capture-file [cfile]\n";
@@ -4081,8 +4516,10 @@ sub usage
     print STDERR "\t# it can go beyond that of --regex. For example, if you wanted to\n";
     print STDERR "\t# filter for www.foobar.com and return packets with the SYN bit set,\n";
     print STDERR "\t# or perhaps you are interested in data packets, you could do:\n";
-    print STDERR "\t# -> \"(host www.foobar.com) && (tcp[13] & 2 != 0)\"\n";
-    print STDERR "\t# -> \"(host www.foobar.com) && (tcp[tcpflags] & (tcp-push) != 0)\"\n";
+    print STDERR "\t#\n";
+    print STDERR "\t#\t\"(host www.foobar.com) && (tcp[13] & 2 != 0)\"\n";
+    print STDERR "\t#\t\"(host www.foobar.com) && (tcp[tcpflags] & (tcp-push) != 0)\"\n";
+    print STDERR "\t#\n";
     print STDERR "\t# For more information, see pcap-filter(7). This feature can cause\n";
     print STDERR "\t# performance issues. Use with caution. Useful to use with:\n";
     print STDERR "\t# --capture, --monitor (--client)\n\n";
@@ -4090,6 +4527,44 @@ sub usage
     print STDERR "\t# Forces a $arg->{name} server or client to start up as a\n";
     print STDERR "\t# daemon, when monitoring. Useful to use with:\n";
     print STDERR "\t# --monitor\n\n";
+    print STDERR "-gd, --geo-dst-lookup <fetch=GEO_CONSTANT [| GEO_CONSTANT]> <db=file>\n";
+    print STDERR "\t# Attempts to lookup information in <file>, based on a captured\n";
+    print STDERR "\t# destination IPv4 address. The information is fetched based on\n";
+    print STDERR "\t# GEO_CONSTANT being the following for a destination address only:\n";
+    print STDERR "\t#\n";
+    print STDERR "\t#\tGEO_LOC_INFO = fetches geographical location information\n";
+    print STDERR "\t#\tGEO_IP4_INFO = fetches geographical IPv4 information\n";
+	print STDERR "\t#\n";
+    print STDERR "\t# The above constants may be combined such as:\n";
+    print STDERR "\t#\n";
+    print STDERR "\t# \tfetch=\"GEO_LOC_INFO | GEO_IP4_INFO\"\n";
+    print STDERR "\t#\n";
+    print STDERR "\t# If a captured IP address falls within: RFC1918, loopback, broadcast\n";
+    print STDERR "\t# autoconfiguration, or multicast, and the constant \"GEO_LOC_INFO\"\n";
+    print STDERR "\t# is used, all location elements will be prefixed with: \"PU\", \"LB\",\n";
+    print STDERR "\t# \"AC\", and \"MC\" respectively. The <file> parameter must point to\n";
+    print STDERR "\t# a file compatible with GeoLiteCity.dat from Maxmind.com. This feature\n"; 
+    print STDERR "\t# can cause performance issues. Use with caution. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
+    print STDERR "-gs, --geo-src-lookup <fetch=GEO_CONSTANT [| GEO_CONSTANT]> <db=file>\n";
+    print STDERR "\t# Attempts to lookup information in <file>, based on a captured\n";
+    print STDERR "\t# source IPv4 address. The information is fetched based on\n";
+    print STDERR "\t# GEO_CONSTANT being the following for a source address only:\n";
+    print STDERR "\t#\n";
+    print STDERR "\t#\tGEO_LOC_INFO = fetches geographical location information\n";
+    print STDERR "\t#\tGEO_IP4_INFO = fetches geographical IPv4 information\n";
+    print STDERR "\t#\n";
+    print STDERR "\t# The above constants may be combined such as:\n";
+    print STDERR "\t#\n";
+    print STDERR "\t# \tfetch=\"GEO_LOC_INFO | GEO_IP4_INFO\"\n";
+    print STDERR "\t#\n";
+    print STDERR "\t# If a captured IP address falls within: RFC1918, loopback, broadcast\n";
+    print STDERR "\t# autoconfiguration, or multicast, and the constant \"GEO_LOC_INFO\"\n";
+    print STDERR "\t# is used, all location elements will be prefixed with: \"PU\", \"LB\",\n";
+    print STDERR "\t# \"AC\", and \"MC\" respectively. The <file> parameter must point to\n";
+    print STDERR "\t# a file compatible with GeoLiteCity.dat from Maxmind.com. This feature\n"; 
+    print STDERR "\t# can cause performance issues. Use with caution. Useful to use with:\n";
+    print STDERR "\t# --capture, --monitor (--client)\n\n";
 	print STDERR "-i, --interface <device>\n";
     print STDERR "\t# Uses <device> to listen for traffic. Useful to use with:\n";
     print STDERR "\t# --capture, --monitor (--client)\n\n";
