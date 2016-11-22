@@ -301,7 +301,7 @@ valid path, including the database file name, holding the GEO information. For
 example, if your database file resides in /netcap/etc/ and the file is called 
 "GeoLiteCity.dat", you would point netcap to it as follows:
 
-	--geo-dst-lookup ... db=/netcap/var/GeoLiteCity.dat
+	--geo-dst-lookup ... db=/netcap/etc/GeoLiteCity.dat
 	
 It is important to note that netcap will ignore a GEO lookup when GEO_LOC_INFO 
 is used AND the IP address used for the lookup falls within the following:
@@ -332,16 +332,16 @@ The prefix identifiers map as follows:
 
 The fields for a location lookup (GEO_LOC_INFO) are:
 
-		continent code
-		country code (three character)
-		country name
-		city
-		region name
-		postal code
-		latitude
-		longitude
-		time zone
-		area code
+	continent code
+	country code (three character)
+	country name
+	city
+	region name
+	postal code
+	latitude
+	longitude
+	time zone
+	area code
 		
 The fields for a IPv4 lookup (GEO_IP4_INFO) are: 
 	
@@ -378,11 +378,11 @@ The database file is usually updated every 30 days. It can be retrieved from:
 http://geolite.maxmind.com/download/geoip/database/GeoLiteCity.dat.gz
 
 Once, downloaded, it can be uncompressed and placed where your current GEO DB 
-resides. In most cases, a default DB exists within netcap's default structure:
+resides. If you wish to use the one that is bundled with netcap, it should be  
+in netcap's structure: 
 
-	/path/to/netcap/var/GeoLiteCity.dat
-		OR
-	/path/to/netcap/var/geolite.dat
+netcap/dependencies/geo-ip/db/lite/GeoLiteCity.dat.gz
+
 	
 IMPORTANT: It is encouraged that the existing DB is backed up as we have no 
 control over how this DB file is updated. An update could, therefore, break 
@@ -754,7 +754,7 @@ Scenario:
 =========
 
 You decide that traffic to www.blackhat.com is unauthorized - you worry that no 
-good can possible come from visiting this site - in all seriousness, the point 
+good can possibly come from visiting this site - in all seriousness, the point 
 is that www.blackhat.com can be replaced with any website that is ACTUALLY a 
 site that could cause harm; just using this site as an example only :)
 
