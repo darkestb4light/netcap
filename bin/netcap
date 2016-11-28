@@ -498,13 +498,14 @@ sub main
 			}else{
 				print STDERR "|--> suppress traffic from stdout stream\n";
 			}
-			print STDERR "|--> ensure traffic matches: \"$arg{regex_cap}\" (regex filter)\n" 
+			print STDERR "|--> match traffic regex to: \"$arg{regex_cap}\"\n" 
 				if($arg{do_regex_cap});
 			if($arg{do_compile_filter}){
-				print STDERR "|--> ensure traffic matches: \"$arg{compile_filter}\" (compile filter)\n";
-				my $optimize = ($arg{compile_filter_optimize}) ? "invoke" : "avoid";
-				print STDERR "|--> $optimize optimization of compiled filter\n";
+				my $optimize = ($arg{compile_filter_optimize}) ? "optimized" : "not optimized";
+				print STDERR "|--> match traffic compile filter to: \"$arg{compile_filter}\" ($optimize)\n";
 			}
+			print STDERR "|--> capture $arg{snaplen} byte(s)/packet\n";
+			print STDERR "|--> set a read timeout of $arg{read_timeout} millisecond(s)\n";
 			if($arg{promiscuous}){
 				print STDERR "|--> listen in promiscuous mode\n";
 			}else{
@@ -872,25 +873,14 @@ sub capture
 	
 	#create packet capture descriptor
 	print STDERR "\n$arg->{name}:\n";
-	print STDERR "|--> Running as pid: $pid\n";
-	print STDERR "|--> Capturing $arg->{snaplen} byte(s)/packet...\n";
-	print STDERR "|--> Read timeout of $arg->{read_timeout} millisecond(s)\n";
-	print STDERR "|--> Binding to interface: $arg->{interface}... ";
+	print STDERR "|--> running as pid: $pid\n";
+	print STDERR "|--> binding to interface: $arg->{interface}... ";
 	create_device($arg->{interface}, \$netmask, $arg->{snaplen}, 
 		$arg->{promiscuous}, $arg->{read_timeout}, \$pcap);
 	print STDERR "success.\n";
 	
 	#capturing
-	if($arg->{promiscuous}){
-		print STDERR "|--> Listening (promiscuous mode = Yes)...\n";
-	}else{
-		print STDERR "|--> Listening (promiscuous mode = No)...\n";
-	}
-	print STDERR "\nNote:\n";
-	print STDERR "|--> To stop capturing at any time, press 'ctrl + c'\n";
-	print STDERR "|--> You can also send a TERM or INT signal to pid: $pid\n";
-	print STDERR "|--> To display current capture progress stats, send a USR1\n";
-	print STDERR "|--> signal to pid: $pid\n\n";
+	print STDERR "|--> listening...\n\n";
 	
 	for(;;)
 	{
@@ -937,54 +927,80 @@ sub capture
 			if($arg->{do_unique}){
 				if($arg->{do_stdout} && ! exists($data{$traffic})){
 					if($arg->{do_packet_detail}){
-						print "$traffic|$hdr|$tcp_flag";
+						print "TRAFFIC|$traffic|HEADER|$hdr|FLAG|$tcp_flag";
 					}else{
-						print "$traffic";
+						print "TRAFFIC|$traffic";
 					}
 					if($arg->{do_geo_src}){
 						 if($arg->{geo_src_info_flag} == 1){
-							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
-								$g_loc_src{continent_code}, $g_loc_src{country_code3}, 
-								$g_loc_src{country_name}, $g_loc_src{city}, 
-								$g_loc_src{region_name}, $g_loc_src{postal_code}, 
-								$g_loc_src{latitude}, $g_loc_src{longitude}, 
-								$g_loc_src{time_zone}, $g_loc_src{area_code}, 
-								$g_loc_src{metro_code});
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								"SRC_CONTINENT_CODE", $g_loc_src{continent_code}, 
+								"SRC_COUNTRY_CODE3", $g_loc_src{country_code3}, 
+								"SRC_COUNTRY_NAME", $g_loc_src{country_name}, 
+								"SRC_CITY", $g_loc_src{city},
+								"SRC_REGION_NAME", $g_loc_src{region_name}, 
+								"SRC_POSTAL_CODE", $g_loc_src{postal_code}, 
+								"SRC_LATITUDE", $g_loc_src{latitude}, 
+								"SRC_LONGITUDE", $g_loc_src{longitude},
+								"SRC_TIME_ZONE", $g_loc_src{time_zone}, 
+								"SRC_AREA_CODE", $g_loc_src{area_code}, 
+								"SRC_METRO_CODE", $g_loc_src{metro_code});
 						}elsif($arg->{geo_src_info_flag} == 2){
-							printf("|%s|%s|%s|%s", $g_ip4_src[0], $g_ip4_src[1], 
-								$g_ip4_src[2], $g_ip4_src[3]);
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s", "SRC_IP4_MIN", $g_ip4_src[0], 
+								"SRC_IP4_MAX", $g_ip4_src[1], "SRC_IP4_MASK", $g_ip4_src[2], 
+								"SRC_IP4_CIDR", $g_ip4_src[3]);
 						}else{
-							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
-								$g_loc_src{continent_code}, $g_loc_src{country_code3}, 
-								$g_loc_src{country_name}, $g_loc_src{city}, 
-								$g_loc_src{region_name}, $g_loc_src{postal_code}, 
-								$g_loc_src{latitude}, $g_loc_src{longitude}, 
-								$g_loc_src{time_zone}, $g_loc_src{area_code}, 
-								$g_loc_src{metro_code}, $g_ip4_src[0], $g_ip4_src[1], 
-								$g_ip4_src[2], $g_ip4_src[3]);	
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								"SRC_CONTINENT_CODE", $g_loc_src{continent_code}, 
+								"SRC_COUNTRY_CODE3", $g_loc_src{country_code3}, 
+								"SRC_COUNTRY_NAME", $g_loc_src{country_name}, 
+								"SRC_CITY", $g_loc_src{city},
+								"SRC_REGION_NAME", $g_loc_src{region_name}, 
+								"SRC_POSTAL_CODE", $g_loc_src{postal_code}, 
+								"SRC_LATITUDE", $g_loc_src{latitude}, 
+								"SRC_LONGITUDE", $g_loc_src{longitude},
+								"SRC_TIME_ZONE", $g_loc_src{time_zone}, 
+								"SRC_AREA_CODE", $g_loc_src{area_code}, 
+								"SRC_METRO_CODE", $g_loc_src{metro_code});
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s", "SRC_IP4_MIN", $g_ip4_src[0], 
+								"SRC_IP4_MAX", $g_ip4_src[1], "SRC_IP4_MASK", $g_ip4_src[2], 
+								"SRC_IP4_CIDR", $g_ip4_src[3]);
 						}
 					}
 					if($arg->{do_geo_dst}){
-						 if($arg->{geo_dst_info_flag} == 1){
-							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
-								$g_loc_dst{continent_code}, $g_loc_dst{country_code3}, 
-								$g_loc_dst{country_name}, $g_loc_dst{city}, 
-								$g_loc_dst{region_name}, $g_loc_dst{postal_code}, 
-								$g_loc_dst{latitude}, $g_loc_dst{longitude}, 
-								$g_loc_dst{time_zone}, $g_loc_dst{area_code}, 
-								$g_loc_dst{metro_code});
+						if($arg->{geo_dst_info_flag} == 1){
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								"DST_CONTINENT_CODE", $g_loc_dst{continent_code}, 
+								"DST_COUNTRY_CODE3", $g_loc_dst{country_code3}, 
+								"DST_COUNTRY_NAME", $g_loc_dst{country_name}, 
+								"DST_CITY", $g_loc_dst{city},
+								"DST_REGION_NAME", $g_loc_dst{region_name}, 
+								"DST_POSTAL_CODE", $g_loc_dst{postal_code}, 
+								"DST_LATITUDE", $g_loc_dst{latitude}, 
+								"DST_LONGITUDE", $g_loc_dst{longitude},
+								"DST_TIME_ZONE", $g_loc_dst{time_zone}, 
+								"DST_AREA_CODE", $g_loc_dst{area_code}, 
+								"DST_METRO_CODE", $g_loc_dst{metro_code});
 						}elsif($arg->{geo_dst_info_flag} == 2){
-							printf("|%s|%s|%s|%s", $g_ip4_dst[0], $g_ip4_dst[1], 
-								$g_ip4_dst[2], $g_ip4_dst[3])
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s", "DST_IP4_MIN", $g_ip4_dst[0], 
+								"DST_IP4_MAX", $g_ip4_dst[1], "DST_IP4_MASK", $g_ip4_dst[2], 
+								"DST_IP4_CIDR", $g_ip4_dst[3]);
 						}else{
-							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
-								$g_loc_dst{continent_code}, $g_loc_dst{country_code3}, 
-								$g_loc_dst{country_name}, $g_loc_dst{city}, 
-								$g_loc_dst{region_name}, $g_loc_dst{postal_code}, 
-								$g_loc_dst{latitude}, $g_loc_dst{longitude}, 
-								$g_loc_dst{time_zone}, $g_loc_dst{area_code}, 
-								$g_loc_dst{metro_code}, $g_ip4_dst[0], $g_ip4_dst[1], 
-								$g_ip4_dst[2], $g_ip4_dst[3]);	
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								"DST_CONTINENT_CODE", $g_loc_dst{continent_code}, 
+								"DST_COUNTRY_CODE3", $g_loc_dst{country_code3}, 
+								"DST_COUNTRY_NAME", $g_loc_dst{country_name}, 
+								"DST_CITY", $g_loc_dst{city},
+								"DST_REGION_NAME", $g_loc_dst{region_name}, 
+								"DST_POSTAL_CODE", $g_loc_dst{postal_code}, 
+								"DST_LATITUDE", $g_loc_dst{latitude}, 
+								"DST_LONGITUDE", $g_loc_dst{longitude},
+								"DST_TIME_ZONE", $g_loc_dst{time_zone}, 
+								"DST_AREA_CODE", $g_loc_dst{area_code}, 
+								"DST_METRO_CODE", $g_loc_dst{metro_code});
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s", "DST_IP4_MIN", $g_ip4_dst[0], 
+								"DST_IP4_MAX", $g_ip4_dst[1], "DST_IP4_MASK", $g_ip4_dst[2], 
+								"DST_IP4_CIDR", $g_ip4_dst[3]);
 						}
 					}
 					print "\n";
@@ -993,54 +1009,80 @@ sub capture
 			}else{
 				if($arg->{do_stdout}){
 					if($arg->{do_packet_detail}){
-						print "$traffic|$hdr|$tcp_flag\n";
+						print "TRAFFIC|$traffic|HEADER|$hdr|FLAG|$tcp_flag";
 					}else{
-						print "$traffic\n";
+						print "TRAFFIC|$traffic";
 					}
 					if($arg->{do_geo_src}){
-						if($arg->{geo_src_info_flag} == 1){
-							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
-								$g_loc_src{continent_code}, $g_loc_src{country_code3}, 
-								$g_loc_src{country_name}, $g_loc_src{city}, 
-								$g_loc_src{region_name}, $g_loc_src{postal_code}, 
-								$g_loc_src{latitude}, $g_loc_src{longitude}, 
-								$g_loc_src{time_zone}, $g_loc_src{area_code}, 
-								$g_loc_src{metro_code});
+						 if($arg->{geo_src_info_flag} == 1){
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								"SRC_CONTINENT_CODE", $g_loc_src{continent_code}, 
+								"SRC_COUNTRY_CODE3", $g_loc_src{country_code3}, 
+								"SRC_COUNTRY_NAME", $g_loc_src{country_name}, 
+								"SRC_CITY", $g_loc_src{city},
+								"SRC_REGION_NAME", $g_loc_src{region_name}, 
+								"SRC_POSTAL_CODE", $g_loc_src{postal_code}, 
+								"SRC_LATITUDE", $g_loc_src{latitude}, 
+								"SRC_LONGITUDE", $g_loc_src{longitude},
+								"SRC_TIME_ZONE", $g_loc_src{time_zone}, 
+								"SRC_AREA_CODE", $g_loc_src{area_code}, 
+								"SRC_METRO_CODE", $g_loc_src{metro_code});
 						}elsif($arg->{geo_src_info_flag} == 2){
-							printf("|%s|%s|%s|%s", $g_ip4_src[0], $g_ip4_src[1], 
-								$g_ip4_src[2], $g_ip4_src[3]);
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s", "SRC_IPv4_MIN", $g_ip4_src[0], 
+								"SRC_IPv4_MAX", $g_ip4_src[1], "SRC_IPV4_MASK", $g_ip4_src[2], 
+								"SRC_IPv4_CIDR", $g_ip4_src[3]);
 						}else{
-							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
-								$g_loc_src{continent_code}, $g_loc_src{country_code3}, 
-								$g_loc_src{country_name}, $g_loc_src{city}, 
-								$g_loc_src{region_name}, $g_loc_src{postal_code}, 
-								$g_loc_src{latitude}, $g_loc_src{longitude}, 
-								$g_loc_src{time_zone}, $g_loc_src{area_code}, 
-								$g_loc_src{metro_code}, $g_ip4_src[0], $g_ip4_src[1], 
-								$g_ip4_src[2], $g_ip4_src[3]);	
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								"SRC_CONTINENT_CODE", $g_loc_src{continent_code}, 
+								"SRC_COUNTRY_CODE3", $g_loc_src{country_code3}, 
+								"SRC_COUNTRY_NAME", $g_loc_src{country_name}, 
+								"SRC_CITY", $g_loc_src{city},
+								"SRC_REGION_NAME", $g_loc_src{region_name}, 
+								"SRC_POSTAL_CODE", $g_loc_src{postal_code}, 
+								"SRC_LATITUDE", $g_loc_src{latitude}, 
+								"SRC_LONGITUDE", $g_loc_src{longitude},
+								"SRC_TIME_ZONE", $g_loc_src{time_zone}, 
+								"SRC_AREA_CODE", $g_loc_src{area_code}, 
+								"SRC_METRO_CODE", $g_loc_src{metro_code});
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s", "SRC_IPv4_MIN", $g_ip4_src[0], 
+								"SRC_IPv4_MAX", $g_ip4_src[1], "SRC_IPV4_MASK", $g_ip4_src[2], 
+								"SRC_IPv4_CIDR", $g_ip4_src[3]);
 						}
 					}
 					if($arg->{do_geo_dst}){
 						if($arg->{geo_dst_info_flag} == 1){
-							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
-								$g_loc_dst{continent_code}, $g_loc_dst{country_code3}, 
-								$g_loc_dst{country_name}, $g_loc_dst{city}, 
-								$g_loc_dst{region_name}, $g_loc_dst{postal_code}, 
-								$g_loc_dst{latitude}, $g_loc_dst{longitude}, 
-								$g_loc_dst{time_zone}, $g_loc_dst{area_code}, 
-								$g_loc_dst{metro_code});
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								"DST_CONTINENT_CODE", $g_loc_dst{continent_code}, 
+								"DST_COUNTRY_CODE3", $g_loc_dst{country_code3}, 
+								"DST_COUNTRY_NAME", $g_loc_dst{country_name}, 
+								"DST_CITY", $g_loc_dst{city},
+								"DST_REGION_NAME", $g_loc_dst{region_name}, 
+								"DST_POSTAL_CODE", $g_loc_dst{postal_code}, 
+								"DST_LATITUDE", $g_loc_dst{latitude}, 
+								"DST_LONGITUDE", $g_loc_dst{longitude},
+								"DST_TIME_ZONE", $g_loc_dst{time_zone}, 
+								"DST_AREA_CODE", $g_loc_dst{area_code}, 
+								"DST_METRO_CODE", $g_loc_dst{metro_code});
 						}elsif($arg->{geo_dst_info_flag} == 2){
-							printf("|%s|%s|%s|%s", $g_ip4_dst[0], $g_ip4_dst[1], 
-								$g_ip4_dst[2], @g_ip4_dst[3])
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s", "DST_IPv4_MIN", $g_ip4_dst[0], 
+								"DST_IPv4_MAX", $g_ip4_dst[1], "DST_IPV4_MASK", $g_ip4_dst[2], 
+								"DST_IPv4_CIDR", $g_ip4_dst[3]);
 						}else{
-							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
-								$g_loc_dst{continent_code}, $g_loc_dst{country_code3}, 
-								$g_loc_dst{country_name}, $g_loc_dst{city}, 
-								$g_loc_dst{region_name}, $g_loc_dst{postal_code}, 
-								$g_loc_dst{latitude}, $g_loc_dst{longitude}, 
-								$g_loc_dst{time_zone}, $g_loc_dst{area_code}, 
-								$g_loc_dst{metro_code}, $g_ip4_dst[0], $g_ip4_dst[1], 
-								$g_ip4_dst[2], $g_ip4_dst[3]);	
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", 
+								"DST_CONTINENT_CODE", $g_loc_dst{continent_code}, 
+								"DST_COUNTRY_CODE3", $g_loc_dst{country_code3}, 
+								"DST_COUNTRY_NAME", $g_loc_dst{country_name}, 
+								"DST_CITY", $g_loc_dst{city},
+								"DST_REGION_NAME", $g_loc_dst{region_name}, 
+								"DST_POSTAL_CODE", $g_loc_dst{postal_code}, 
+								"DST_LATITUDE", $g_loc_dst{latitude}, 
+								"DST_LONGITUDE", $g_loc_dst{longitude},
+								"DST_TIME_ZONE", $g_loc_dst{time_zone}, 
+								"DST_AREA_CODE", $g_loc_dst{area_code}, 
+								"DST_METRO_CODE", $g_loc_dst{metro_code});
+							printf("|%s|%s|%s|%s|%s|%s|%s|%s", "DST_IPv4_MIN", $g_ip4_dst[0], 
+								"DST_IPv4_MAX", $g_ip4_dst[1], "DST_IPV4_MASK", $g_ip4_dst[2], 
+								"DST_IPv4_CIDR", $g_ip4_dst[3]);
 						}
 					}
 					print "\n";
@@ -1252,77 +1294,77 @@ sub geo_lookup
 		if($ip =~ m/^((10\.\d{1,3}\.\d{1,3}\.\d{1,3}) |
 					(172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}) |
 					(192\.168\.\d{1,3}\.\d{1,3}))$/x){
-			$g_loc->{continent_code} = "PU_continent_code";
-			$g_loc->{country_code3} = "PU_country_code3";
-			$g_loc->{country_name} = "PU_country_name";
-			$g_loc->{city} = "PU_city";
-			$g_loc->{region_name} = "PU_region_name";
-			$g_loc->{postal_code} = "PU_postal_code";
-			$g_loc->{latitude} = "PU_latitude";
-			$g_loc->{longitude} = "PU_longitude";
-			$g_loc->{time_zone} = "PU_time_zone";
-			$g_loc->{area_code} = "PU_area_code";
-			$g_loc->{metro_code} = "PU_metro_code";
+			$g_loc->{continent_code} = "PU_NULL";
+			$g_loc->{country_code3} = "PU_NULL";
+			$g_loc->{country_name} = "PU_NULL";
+			$g_loc->{city} = "PU_NULL";
+			$g_loc->{region_name} = "PU_NULL";
+			$g_loc->{postal_code} = "PU_NULL";
+			$g_loc->{latitude} = "PU_NULL";
+			$g_loc->{longitude} = "PU_NULL";
+			$g_loc->{time_zone} = "PU_NULL";
+			$g_loc->{area_code} = "PU_NULL";
+			$g_loc->{metro_code} = "PU_NULL";
 		}elsif($ip =~ m/^(22[4-9]|23[0-9])\.\d{1,3}\.\d{1,3}\.\d{1,3}$/){	
-			$g_loc->{continent_code} = "MC_continent_code";
-			$g_loc->{country_code3} = "MC_country_code3";
-			$g_loc->{country_name} = "MC_country_name";
-			$g_loc->{city} = "MC_city";
-			$g_loc->{region_name} = "MC_region_name";
-			$g_loc->{postal_code} = "MC_postal_code";
-			$g_loc->{latitude} = "MC_latitude";
-			$g_loc->{longitude} = "MC_longitude";
-			$g_loc->{time_zone} = "MC_time_zone";
-			$g_loc->{area_code} = "MC_area_code";
-			$g_loc->{metro_code} = "MC_metro_code";
+			$g_loc->{continent_code} = "MC_NULL";
+			$g_loc->{country_code3} = "MC_NULL";
+			$g_loc->{country_name} = "MC_NULL";
+			$g_loc->{city} = "MC_NULL";
+			$g_loc->{region_name} = "MC_NULL";
+			$g_loc->{postal_code} = "MC_NULL";
+			$g_loc->{latitude} = "MC_NULL";
+			$g_loc->{longitude} = "MC_NULL";
+			$g_loc->{time_zone} = "MC_NULL";
+			$g_loc->{area_code} = "MC_NULL";
+			$g_loc->{metro_code} = "MC_NULL";
 		}elsif($ip =~ m/^255\.255\.255\.255$/){
-			$g_loc->{continent_code} = "BC_continent_code";
-			$g_loc->{country_code3} = "BC_country_code3";
-			$g_loc->{country_name} = "BC_country_name";
-			$g_loc->{city} = "BC_city";
-			$g_loc->{region_name} = "BC_region_name";
-			$g_loc->{postal_code} = "BC_postal_code";
-			$g_loc->{latitude} = "BC_latitude";
-			$g_loc->{longitude} = "BC_longitude";
-			$g_loc->{time_zone} = "BC_time_zone";
-			$g_loc->{area_code} = "BC_area_code";
-			$g_loc->{metro_code} = "BC_metro_code";
+			$g_loc->{continent_code} = "BC_NULL";
+			$g_loc->{country_code3} = "BC_NULL";
+			$g_loc->{country_name} = "BC_NULL";
+			$g_loc->{city} = "BC_NULL";
+			$g_loc->{region_name} = "BC_NULL";
+			$g_loc->{postal_code} = "BC_NULL";
+			$g_loc->{latitude} = "BC_NULL";
+			$g_loc->{longitude} = "BC_NULL";
+			$g_loc->{time_zone} = "BC_NULL";
+			$g_loc->{area_code} = "BC_NULL";
+			$g_loc->{metro_code} = "BC_NULL";
 		}elsif($ip =~ m/^169\.254\.\d{1,3}\.\d{1,3}$/){
-			$g_loc->{continent_code} = "AC_continent_code";
-			$g_loc->{country_code3} = "AC_country_code3";
-			$g_loc->{country_name} = "AC_country_name";
-			$g_loc->{city} = "AC_city";
-			$g_loc->{region_name} = "AC_region_name";
-			$g_loc->{postal_code} = "AC_postal_code";
-			$g_loc->{latitude} = "AC_latitude";
-			$g_loc->{longitude} = "AC_longitude";
-			$g_loc->{time_zone} = "AC_time_zone";
-			$g_loc->{area_code} = "AC_area_code";
-			$g_loc->{metro_code} = "AC_metro_code";
+			$g_loc->{continent_code} = "AC_NULL";
+			$g_loc->{country_code3} = "AC_NULL";
+			$g_loc->{country_name} = "AC_NULL";
+			$g_loc->{city} = "AC_NULL";
+			$g_loc->{region_name} = "AC_NULL";
+			$g_loc->{postal_code} = "AC_NULL";
+			$g_loc->{latitude} = "AC_NULL";
+			$g_loc->{longitude} = "AC_NULL";
+			$g_loc->{time_zone} = "AC_NULL";
+			$g_loc->{area_code} = "AC_NULL";
+			$g_loc->{metro_code} = "AC_NULL";
 		}elsif($ip =~ m/^127.\d{1,3}\.\d{1,3}\.\d{1,3}$/){
-			$g_loc->{continent_code} = "LB_continent_code";
-			$g_loc->{country_code3} = "LB_country_code3";
-			$g_loc->{country_name} = "LB_country_name";
-			$g_loc->{city} = "LB_city";
-			$g_loc->{region_name} = "LB_region_name";
-			$g_loc->{postal_code} = "LB_postal_code";
-			$g_loc->{latitude} = "LB_latitude";
-			$g_loc->{longitude} = "LB_longitude";
-			$g_loc->{time_zone} = "LB_time_zone";
-			$g_loc->{area_code} = "LB_area_code";
-			$g_loc->{metro_code} = "LB_metro_code";
+			$g_loc->{continent_code} = "LB_NULL";
+			$g_loc->{country_code3} = "LB_NULL";
+			$g_loc->{country_name} = "LB_NULL";
+			$g_loc->{city} = "LB_NULL";
+			$g_loc->{region_name} = "LB_NULL";
+			$g_loc->{postal_code} = "LB_NULL";
+			$g_loc->{latitude} = "LB_NULL";
+			$g_loc->{longitude} = "LB_NULL";
+			$g_loc->{time_zone} = "LB_NULL";
+			$g_loc->{area_code} = "LB_NULL";
+			$g_loc->{metro_code} = "LB_NULL";
 		}else{
-			$g_loc->{continent_code} = ($rec->{continent_code}) ? $rec->{continent_code} : "NULL";
-			$g_loc->{country_code3} = ($rec->{country_code3}) ? $rec->{country_code3} : "NULL";
-			$g_loc->{country_name} = ($rec->{country_name}) ? $rec->{country_name} : "NULL";
-			$g_loc->{city} = ($rec->{city}) ? $rec->{city} : "NULL";
-			$g_loc->{region_name} = ($rec->{region_name}) ? $rec->{region_name} : "NULL";
-			$g_loc->{postal_code} = ($rec->{postal_code}) ? $rec->{postal_code} : "NULL";
-			$g_loc->{latitude} = ($rec->{latitude}) ? $rec->{latitude} : "NULL";
-			$g_loc->{longitude} = ($rec->{longitude}) ? $rec->{longitude} : "NULL";
-			$g_loc->{time_zone} = ($rec->time_zone) ? $rec->time_zone : "NULL";
-			$g_loc->{area_code} = ($rec->{area_code}) ? $rec->{area_code} : "NULL";
-			$g_loc->{metro_code} = ($rec->{metro_code}) ? $rec->{metro_code} : "NULL";
+			$g_loc->{continent_code} = ($rec->{continent_code}) ? $rec->{continent_code} : "GEO_NULL";
+			$g_loc->{country_code3} = ($rec->{country_code3}) ? $rec->{country_code3} : "GEO_NULL";
+			$g_loc->{country_name} = ($rec->{country_name}) ? $rec->{country_name} : "GEO_NULL";
+			$g_loc->{city} = ($rec->{city}) ? $rec->{city} : "GEO_NULL";
+			$g_loc->{region_name} = ($rec->{region_name}) ? $rec->{region_name} : "GEO_NULL";
+			$g_loc->{postal_code} = ($rec->{postal_code}) ? $rec->{postal_code} : "GEO_NULL";
+			$g_loc->{latitude} = ($rec->{latitude}) ? $rec->{latitude} : "GEO_NULL";
+			$g_loc->{longitude} = ($rec->{longitude}) ? $rec->{longitude} : "GEO_NULL";
+			$g_loc->{time_zone} = ($rec->time_zone) ? $rec->time_zone : "GEO_NULL";
+			$g_loc->{area_code} = ($rec->{area_code}) ? $rec->{area_code} : "GEO_NULL";
+			$g_loc->{metro_code} = ($rec->{metro_code}) ? $rec->{metro_code} : "GEO_NULL";
 		}
 	}elsif($g_mask == 2){
 		my ($from, $to) = $gi->range_by_ip($ip);
@@ -1335,77 +1377,77 @@ sub geo_lookup
 		if($ip =~ m/^((10\.\d{1,3}\.\d{1,3}\.\d{1,3}) |
 					(172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}) |
 					(192\.168\.\d{1,3}\.\d{1,3}))$/x){
-			$g_loc->{continent_code} = "PU_continent_code";
-			$g_loc->{country_code3} = "PU_country_code3";
-			$g_loc->{country_name} = "PU_country_name";
-			$g_loc->{city} = "PU_city";
-			$g_loc->{region_name} = "PU_region_name";
-			$g_loc->{postal_code} = "PU_postal_code";
-			$g_loc->{latitude} = "PU_latitude";
-			$g_loc->{longitude} = "PU_longitude";
-			$g_loc->{time_zone} = "PU_time_zone";
-			$g_loc->{area_code} = "PU_area_code";
-			$g_loc->{metro_code} = "PU_metro_code"
+			$g_loc->{continent_code} = "PU_NULL";
+			$g_loc->{country_code3} = "PU_NULL";
+			$g_loc->{country_name} = "PU_NULL";
+			$g_loc->{city} = "PU_NULL";
+			$g_loc->{region_name} = "PU_NULL";
+			$g_loc->{postal_code} = "PU_NULL";
+			$g_loc->{latitude} = "PU_NULL";
+			$g_loc->{longitude} = "PU_NULL";
+			$g_loc->{time_zone} = "PU_NULL";
+			$g_loc->{area_code} = "PU_NULL";
+			$g_loc->{metro_code} = "PU_NULL";
 		}elsif($ip =~ m/^(22[4-9]|23[0-9])\.\d{1,3}\.\d{1,3}\.\d{1,3}$/){	
-			$g_loc->{continent_code} = "MC_continent_code";
-			$g_loc->{country_code3} = "MC_country_code3";
-			$g_loc->{country_name} = "MC_country_name";
-			$g_loc->{city} = "MC_city";
-			$g_loc->{region_name} = "MC_region_name";
-			$g_loc->{postal_code} = "MC_postal_code";
-			$g_loc->{latitude} = "MC_latitude";
-			$g_loc->{longitude} = "MC_longitude";
-			$g_loc->{time_zone} = "MC_time_zone";
-			$g_loc->{area_code} = "MC_area_code";
-			$g_loc->{metro_code} = "MC_metro_code";
+			$g_loc->{continent_code} = "MC_NULL";
+			$g_loc->{country_code3} = "MC_NULL";
+			$g_loc->{country_name} = "MC_NULL";
+			$g_loc->{city} = "MC_NULL";
+			$g_loc->{region_name} = "MC_NULL";
+			$g_loc->{postal_code} = "MC_NULL";
+			$g_loc->{latitude} = "MC_NULL";
+			$g_loc->{longitude} = "MC_NULL";
+			$g_loc->{time_zone} = "MC_NULL";
+			$g_loc->{area_code} = "MC_NULL";
+			$g_loc->{metro_code} = "MC_NULL";
 		}elsif($ip =~ m/^255\.255\.255\.255$/){
-			$g_loc->{continent_code} = "BC_continent_code";
-			$g_loc->{country_code3} = "BC_country_code3";
-			$g_loc->{country_name} = "BC_country_name";
-			$g_loc->{city} = "BC_city";
-			$g_loc->{region_name} = "BC_region_name";
-			$g_loc->{postal_code} = "BC_postal_code";
-			$g_loc->{latitude} = "BC_latitude";
-			$g_loc->{longitude} = "BC_longitude";
-			$g_loc->{time_zone} = "BC_time_zone";
-			$g_loc->{area_code} = "BC_area_code";
-			$g_loc->{metro_code} = "BC_metro_code";
+			$g_loc->{continent_code} = "BC_NULL";
+			$g_loc->{country_code3} = "BC_NULL";
+			$g_loc->{country_name} = "BC_NULL";
+			$g_loc->{city} = "BC_NULL";
+			$g_loc->{region_name} = "BC_NULL";
+			$g_loc->{postal_code} = "BC_NULL";
+			$g_loc->{latitude} = "BC_NULL";
+			$g_loc->{longitude} = "BC_NULL";
+			$g_loc->{time_zone} = "BC_NULL";
+			$g_loc->{area_code} = "BC_NULL";
+			$g_loc->{metro_code} = "BC_NULL";
 		}elsif($ip =~ m/^169\.254\.\d{1,3}\.\d{1,3}$/){
-			$g_loc->{continent_code} = "AC_continent_code";
-			$g_loc->{country_code3} = "AC_country_code3";
-			$g_loc->{country_name} = "AC_country_name";
-			$g_loc->{city} = "AC_city";
-			$g_loc->{region_name} = "AC_region_name";
-			$g_loc->{postal_code} = "AC_postal_code";
-			$g_loc->{latitude} = "AC_latitude";
-			$g_loc->{longitude} = "AC_longitude";
-			$g_loc->{time_zone} = "AC_time_zone";
-			$g_loc->{area_code} = "AC_area_code";
-			$g_loc->{metro_code} = "AC_metro_code";
+			$g_loc->{continent_code} = "AC_NULL";
+			$g_loc->{country_code3} = "AC_NULL";
+			$g_loc->{country_name} = "AC_NULL";
+			$g_loc->{city} = "AC_NULL";
+			$g_loc->{region_name} = "AC_NULL";
+			$g_loc->{postal_code} = "AC_NULL";
+			$g_loc->{latitude} = "AC_NULL";
+			$g_loc->{longitude} = "AC_NULL";
+			$g_loc->{time_zone} = "AC_NULL";
+			$g_loc->{area_code} = "AC_NULL";
+			$g_loc->{metro_code} = "AC_NULL";
 		}elsif($ip =~ m/^127.\d{1,3}\.\d{1,3}\.\d{1,3}$/){
-			$g_loc->{continent_code} = "LB_continent_code";
-			$g_loc->{country_code3} = "LB_country_code3";
-			$g_loc->{country_name} = "LB_country_name";
-			$g_loc->{city} = "LB_city";
-			$g_loc->{region_name} = "LB_region_name";
-			$g_loc->{postal_code} = "LB_postal_code";
-			$g_loc->{latitude} = "LB_latitude";
-			$g_loc->{longitude} = "LB_longitude";
-			$g_loc->{time_zone} = "LB_time_zone";
-			$g_loc->{area_code} = "LB_area_code";
-			$g_loc->{metro_code} = "LB_metro_code";
+			$g_loc->{continent_code} = "LB_NULL";
+			$g_loc->{country_code3} = "LB_NULL";
+			$g_loc->{country_name} = "LB_NULL";
+			$g_loc->{city} = "LB_NULL";
+			$g_loc->{region_name} = "LB_NULL";
+			$g_loc->{postal_code} = "LB_NULL";
+			$g_loc->{latitude} = "LB_NULL";
+			$g_loc->{longitude} = "LB_NULL";
+			$g_loc->{time_zone} = "LB_NULL";
+			$g_loc->{area_code} = "LB_NULL";
+			$g_loc->{metro_code} = "LB_NULL";
 		}else{
-			$g_loc->{continent_code} = ($rec->{continent_code}) ? $rec->{continent_code} : "NULL";
-			$g_loc->{country_code3} = ($rec->{country_code3}) ? $rec->{country_code3} : "NULL";
-			$g_loc->{country_name} = ($rec->{country_name}) ? $rec->{country_name} : "NULL";
-			$g_loc->{city} = ($rec->{city}) ? $rec->{city} : "NULL";
-			$g_loc->{region_name} = ($rec->{region_name}) ? $rec->{region_name} : "NULL";
-			$g_loc->{postal_code} = ($rec->{postal_code}) ? $rec->{postal_code} : "NULL";
-			$g_loc->{latitude} = ($rec->{latitude}) ? $rec->{latitude} : "NULL";
-			$g_loc->{longitude} = ($rec->{longitude}) ? $rec->{longitude} : "NULL";
-			$g_loc->{time_zone} = ($rec->time_zone) ? $rec->time_zone : "NULL";
-			$g_loc->{area_code} = ($rec->{area_code}) ? $rec->{area_code} : "NULL";
-			$g_loc->{metro_code} = ($rec->{metro_code}) ? $rec->{metro_code} : "NULL";
+			$g_loc->{continent_code} = ($rec->{continent_code}) ? $rec->{continent_code} : "GEO_NULL";
+			$g_loc->{country_code3} = ($rec->{country_code3}) ? $rec->{country_code3} : "GEO_NULL";
+			$g_loc->{country_name} = ($rec->{country_name}) ? $rec->{country_name} : "GEO_NULL";
+			$g_loc->{city} = ($rec->{city}) ? $rec->{city} : "GEO_NULL";
+			$g_loc->{region_name} = ($rec->{region_name}) ? $rec->{region_name} : "GEO_NULL";
+			$g_loc->{postal_code} = ($rec->{postal_code}) ? $rec->{postal_code} : "GEO_NULL";
+			$g_loc->{latitude} = ($rec->{latitude}) ? $rec->{latitude} : "GEO_NULL";
+			$g_loc->{longitude} = ($rec->{longitude}) ? $rec->{longitude} : "GEO_NULL";
+			$g_loc->{time_zone} = ($rec->time_zone) ? $rec->time_zone : "GEO_NULL";
+			$g_loc->{area_code} = ($rec->{area_code}) ? $rec->{area_code} : "GEO_NULL";
+			$g_loc->{metro_code} = ($rec->{metro_code}) ? $rec->{metro_code} : "GEO_NULL";
 		}
 		my ($from, $to) = $gi->range_by_ip($ip);
 		my $range = "$from-$to";
@@ -2235,8 +2277,7 @@ sub learn
 				$choice = <STDIN>;
 				chomp;
 			}while($choice !~ m/^(y(es)?|n[o]?)\b/i);			
-			if($choice =~ m/^[Yy](es)?$/)
-			{
+			if($choice =~ m/^[Yy](es)?$/){
 				print "\nNote:\n";
 				print "- The entered filter will be treated as a regular expression.\n";
 				print "- Ensure you escape if in doubt (e.g., octet separators)\n";
@@ -2275,6 +2316,9 @@ sub learn
 						push(@filters, $skip_filter);
 					}
 				}
+			}else{
+				$skip_to_main = 1;
+				redo;
 			}
 			if(($#filters + 1) > 0){
 				$do_skip_filter = 1;
@@ -3307,7 +3351,7 @@ sub monitor_server
 		}
 		$date = localtime();
 		chomp($packet);
-		($packet, $client_msg) = split(/\|/, $packet, 2);
+		($traf_hdr, $packet, $client_msg) = split(/\|/, $packet, 3);
 		$seen = build_cache($packet, \%packet_data, $date, $record_id, 
 			$arg->{do_cache_key_dst}, \$src, \$dst);
 		if(! $seen){
@@ -3316,9 +3360,9 @@ sub monitor_server
 				$log_msg = "Client Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
 				if($arg->{do_cache_key_dst}){
 					my $peer = $socket->peerhost.":".$socket->peerport;
-					$log_msg .= "$peer|$protocol|$src > $dst";
+					$log_msg .= "PEER|$peer|PROTOCOL|$protocol|$traf_hdr|$src > $dst";
 				}else{
-					$log_msg .= "$peer|$protocol|$packet";
+					$log_msg .= "PEER|$peer|PROTOCOL|$protocol|$traf_hdr|$packet";
 				}
 				$log_msg .= "|$client_msg\n";
 				log_message($log_msg, $arg->{log_server});
@@ -3338,7 +3382,7 @@ sub monitor_server
 						$log_msg .= "Reached packet cache limit of $packet_count\n";
 						log_message($log_msg, $arg->{log_server});
 					}
-					print STDERR "\n\n-- Reached packet cache limit of $packet_count (server pid: $pid).\n" 
+					print STDERR "\n-- Reached packet cache limit of $packet_count (server pid: $pid).\n" 
 						unless($arg->{do_daemon});
 					$total_keys = keys(%packet_data);
 					if($arg->{do_log}){
@@ -3461,7 +3505,7 @@ sub monitor_server
 						$log_msg .= "Refreshing of server done\n";
 						log_message($log_msg, $arg->{log_server});
 					}
-					print STDERR "done.\n" unless($arg->{do_daemon});
+					print STDERR "done.\n\n" unless($arg->{do_daemon});
 				}
 			}
 		}
@@ -3730,7 +3774,7 @@ sub monitor_client
 				log_message($log_msg, $arg->{log_client});
 				$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
 				$log_msg .= "Total packets (Network, IP, Requested, Captured, Unique): ";
-				$log_msg .= "$total_net_packets,  $total_ip_packets, $packet_max, ";
+				$log_msg .= "$total_net_packets, $total_ip_packets, $packet_max, ";
 				$log_msg .= "$packet_count, $ucount\n";
 				log_message($log_msg, $arg->{log_client});
 			}
@@ -3742,48 +3786,80 @@ sub monitor_client
 			}
 			last;
 		}else{
-			$client_msg = "$packet|$record_id";
+			$client_msg = "TRAFFIC|$packet|RECORD|$record_id";
 			if($arg->{do_packet_detail}){
-				 $client_msg .= "|$hdr|$tcp_flag";
+				 $client_msg .= "|HEADER|$hdr|FLAG|$tcp_flag";
 			}
 			if($arg->{do_geo_src}){
-				 if($arg->{geo_src_info_flag} == 1){
-					 $client_msg .= "|$g_loc_src{continent_code}|$g_loc_src{country_code3}";
-					 $client_msg .= "|$g_loc_src{country_name}|$g_loc_src{city}";
-					 $client_msg .= "|$g_loc_src{region_name}|$g_loc_src{postal_code}";
-					 $client_msg .= "|$g_loc_src{latitude}|$g_loc_src{longitude}";
-					 $client_msg .= "|$g_loc_src{time_zone}|$g_loc_src{area_code}";
-					 $client_msg .= "|$g_loc_src{metro_code}";
-				 }elsif($arg->{geo_src_info_flag} == 2){
-					 $client_msg .= "|$g_ip4_src[0]|$g_ip4_src[1]|$g_ip4_src[2]|$g_ip4_src[3]";
+				if($arg->{geo_src_info_flag} == 1){
+				 	$client_msg .= "|SRC_CONTINENT_CODE|$g_loc_src{continent_code}";
+				 	$client_msg .= "|SRC_COUNTRY_CODE3|$g_loc_src{country_code3}";
+				 	$client_msg .= "|SRC_COUNTRY_NAME|$g_loc_src{country_name}";
+				 	$client_msg .= "|SRC_CITY|$g_loc_src{city}";
+				 	$client_msg .= "|SRC_REGION_NAME|$g_loc_src{region_name}";
+				 	$client_msg .= "|SRC_POSTAL_CODE|$g_loc_src{postal_code}";
+				 	$client_msg .= "|SRC_LATITUDE|$g_loc_src{latitude}";
+				 	$client_msg .= "|SRC_LONGITUDE|$g_loc_src{longitude}";
+				 	$client_msg .= "|SRC_TIME_ZONE|$g_loc_src{time_zone}";
+				 	$client_msg .= "|SRC_AREA_CODE|$g_loc_src{area_code}";
+				 	$client_msg .= "|SRC_METRO_CODE|$g_loc_src{metro_code}";
+				}elsif($arg->{geo_src_info_flag} == 2){
+				 	$client_msg .= "|SRC_IP4_MIN|$g_ip4_src[0]";
+				 	$client_msg .= "|SRC_IP4_MAX|$g_ip4_src[1]";
+				 	$client_msg .= "|SRC_IP4_MASK|$g_ip4_src[2]";
+				 	$client_msg .= "|SRC_IP4_CIDR|$g_ip4_src[3]";
 				 }else{
-					 $client_msg .= "|$g_loc_src{continent_code}|$g_loc_src{country_code3}";
-					 $client_msg .= "|$g_loc_src{country_name}|$g_loc_src{city}";
-					 $client_msg .= "|$g_loc_src{region_name}|$g_loc_src{postal_code}";
-					 $client_msg .= "|$g_loc_src{latitude}|$g_loc_src{longitude}";
-					 $client_msg .= "|$g_loc_src{time_zone}|$g_loc_src{area_code}";
-					 $client_msg .= "|$g_loc_src{metro_code}";
-					 $client_msg .= "|$g_ip4_src[0]|$g_ip4_src[1]|$g_ip4_src[2]|$g_ip4_src[3]";
+				 	$client_msg .= "|SRC_CONTINENT_CODE|$g_loc_src{continent_code}";
+				 	$client_msg .= "|SRC_COUNTRY_CODE3|$g_loc_src{country_code3}";
+				 	$client_msg .= "|SRC_COUNTRY_NAME|$g_loc_src{country_name}";
+				 	$client_msg .= "|SRC_CITY|$g_loc_src{city}";
+				 	$client_msg .= "|SRC_REGION_NAME|$g_loc_src{region_name}";
+				 	$client_msg .= "|SRC_POSTAL_CODE|$g_loc_src{postal_code}";
+				 	$client_msg .= "|SRC_LATITUDE|$g_loc_src{latitude}";
+				 	$client_msg .= "|SRC_LONGITUDE|$g_loc_src{longitude}";
+				 	$client_msg .= "|SRC_TIME_ZONE|$g_loc_src{time_zone}";
+				 	$client_msg .= "|SRC_AREA_CODE|$g_loc_src{area_code}";
+				 	$client_msg .= "|SRC_METRO_CODE|$g_loc_src{metro_code}";
+				 	$client_msg .= "|SRC_IP4_MIN|$g_ip4_src[0]";
+				 	$client_msg .= "|SRC_IP4_MAX|$g_ip4_src[1]";
+				 	$client_msg .= "|SRC_IP4_MASK|$g_ip4_src[2]";
+				 	$client_msg .= "|SRC_IP4_CIDR|$g_ip4_src[3]";
 				 }
 			}
 			if($arg->{do_geo_dst}){
 				 if($arg->{geo_dst_info_flag} == 1){
-					 $client_msg .= "|$g_loc_dst{continent_code}|$g_loc_dst{country_code3}";
-					 $client_msg .= "|$g_loc_dst{country_name}|$g_loc_dst{city}";
-					 $client_msg .= "|$g_loc_dst{region_name}|$g_loc_dst{postal_code}";
-					 $client_msg .= "|$g_loc_dst{latitude}|$g_loc_dst{longitude}";
-					 $client_msg .= "|$g_loc_dst{time_zone}|$g_loc_dst{area_code}";
-					 $client_msg .= "|$g_loc_dst{metro_code}";
-				 }elsif($arg->{geo_dst_info_flag} == 2){
-					 $client_msg .= "|$g_ip4_dst[0]|$g_ip4_dst[1]|$g_ip4_dst[2]|$g_ip4_dst[3]";
+				 	$client_msg .= "|DST_CONTINENT_CODE|$g_loc_dst{continent_code}";
+				 	$client_msg .= "|DST_COUNTRY_CODE3|$g_loc_dst{country_code3}";
+				 	$client_msg .= "|DST_COUNTRY_NAME|$g_loc_dst{country_name}";
+				 	$client_msg .= "|DST_CITY|$g_loc_dst{city}";
+				 	$client_msg .= "|DST_REGION_NAME|$g_loc_dst{region_name}";
+				 	$client_msg .= "|DST_POSTAL_CODE|$g_loc_dst{postal_code}";
+				 	$client_msg .= "|DST_LATITUDE|$g_loc_dst{latitude}";
+				 	$client_msg .= "|DST_LONGITUDE|$g_loc_dst{longitude}";
+				 	$client_msg .= "|DST_TIME_ZONE|$g_loc_dst{time_zone}";
+				 	$client_msg .= "|DST_AREA_CODE|$g_loc_dst{area_code}";
+				 	$client_msg .= "|DST_METRO_CODE|$g_loc_dst{metro_code}";
+				}elsif($arg->{geo_dst_info_flag} == 2){
+				 	$client_msg .= "|DST_IP4_MIN|$g_ip4_dst[0]";
+				 	$client_msg .= "|DST_IP4_MAX|$g_ip4_dst[1]";
+				 	$client_msg .= "|DST_IP4_MASK|$g_ip4_dst[2]";
+				 	$client_msg .= "|DST_IP4_CIDR|$g_ip4_dst[3]";
 				 }else{
-					 $client_msg .= "|$g_loc_dst{continent_code}|$g_loc_dst{country_code3}";
-					 $client_msg .= "|$g_loc_dst{country_name}|$g_loc_dst{city}";
-					 $client_msg .= "|$g_loc_dst{region_name}|$g_loc_dst{postal_code}";
-					 $client_msg .= "|$g_loc_dst{latitude}|$g_loc_dst{longitude}";
-					 $client_msg .= "|$g_loc_dst{time_zone}|$g_loc_dst{area_code}";
-					 $client_msg .= "|$g_loc_dst{metro_code}";
-					 $client_msg .= "|$g_ip4_dst[0]|$g_ip4_dst[1]|$g_ip4_dst[2]|$g_ip4_dst[3]";
+				 	$client_msg .= "|DST_CONTINENT_CODE|$g_loc_dst{continent_code}";
+				 	$client_msg .= "|DST_COUNTRY_CODE3|$g_loc_dst{country_code3}";
+				 	$client_msg .= "|DST_COUNTRY_NAME|$g_loc_dst{country_name}";
+				 	$client_msg .= "|DST_CITY|$g_loc_dst{city}";
+				 	$client_msg .= "|DST_REGION_NAME|$g_loc_dst{region_name}";
+				 	$client_msg .= "|DST_POSTAL_CODE|$g_loc_dst{postal_code}";
+				 	$client_msg .= "|DST_LATITUDE|$g_loc_dst{latitude}";
+				 	$client_msg .= "|DST_LONGITUDE|$g_loc_dst{longitude}";
+				 	$client_msg .= "|DST_TIME_ZONE|$g_loc_dst{time_zone}";
+				 	$client_msg .= "|DST_AREA_CODE|$g_loc_dst{area_code}";
+				 	$client_msg .= "|DST_METRO_CODE|$g_loc_dst{metro_code}";
+				 	$client_msg .= "|DST_IP4_MIN|$g_ip4_dst[0]";
+				 	$client_msg .= "|DST_IP4_MAX|$g_ip4_dst[1]";
+				 	$client_msg .= "|DST_IP4_MASK|$g_ip4_dst[2]";
+				 	$client_msg .= "|DST_IP4_CIDR|$g_ip4_dst[3]";
 				 }
 			}
 			if($arg->{do_unique}){
@@ -3799,9 +3875,9 @@ sub monitor_client
 						$log_msg .= "$client_msg\n";
 						log_message($log_msg, $arg->{log_client});
 					}
-				}
-				$socket->send($client_msg) 
+					$socket->send($client_msg) 
 					or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
+				}
 				$data{$packet}++;
 			}else{
 				if($arg->{do_stdout}){
@@ -3815,7 +3891,7 @@ sub monitor_client
 					$log_msg .= "$client_msg\n";
 					log_message($log_msg, $arg->{log_client});
 				}
-				$socket->send($client_msg) 
+				$socket->send("$client_msg") 
 					or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
 				$data{$packet_count} = $packet;
 			}
@@ -4420,7 +4496,11 @@ sub usage
     print STDERR "\t# is preferred, you can pass this instead (see: --interface)\n";
     print STDERR "\t# If you are not sure what devices are available, you can\n";
     print STDERR "\t# leverage various commands to provide a list. Alternatively,\n";
-    print STDERR "\t# $arg->{name} can attempt to do so (see: --list-interfaces).\n\n";
+    print STDERR "\t# $arg->{name} can attempt to do so (see: --list-interfaces).\n";
+    print STDERR "\t# You can stop capturing at any time by sending an interrupt\n";
+    print STDERR "\t# such as pressing: 'control + c', sending a INT signal, or by\n";
+    print STDERR "\t# sending an TERM signal. You can see current capture stats by\n";
+    print STDERR "\t# sending a USR1 signal.\n\n";
     print STDERR "-gc, --get-cidr <ip-range>\n"; 
     print STDERR "\t# Return CIDR blocks, given <ip-range>. This can be useful to\n";
     print STDERR "\t# ensure all CIDR blocks are covered for various rules. For\n";
@@ -4466,7 +4546,10 @@ sub usage
 	print STDERR "\t# reached (see: --packet-count). This command is most useful once\n";
 	print STDERR "\t# you believe you have captured sufficient traffic for the given\n";
 	print STDERR "\t# environment (see: --capture) and/or have sufficiently created\n";
-	print STDERR "\t# rules to minimize false positives/negatives (see: --learn).\n\n";
+	print STDERR "\t# rules to minimize false positives/negatives (see: --learn).\n";
+	print STDERR "\t# You can stop monitoring at any time by sending an interrupt\n";
+    print STDERR "\t# such as pressing: 'control + c', sending a INT signal, or by\n";
+    print STDERR "\t# sending an TERM signal.\n\n";
 	print STDERR "--sort-learn=<auth | unauth> [lfile]\n";
 	print STDERR "\t# Sorts learned data by authorized or unauthorized. Should [lfile]\n";
 	print STDERR "\t# be omitted, then $arg->{lfile} is used. This command is useful\n";
