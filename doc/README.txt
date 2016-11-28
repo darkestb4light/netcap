@@ -152,10 +152,10 @@ is capturing packets by passing a "SIGUSR1" signal to the process. If this is
 done, netcap will dump stats similar to the following:
 
 ...
-192.168.0.40:5353 > 224.0.0.251:5353
-192.168.0.11:1053 > 239.255.255.250:8082
-192.168.0.40:45164 > 239.255.255.250:1900
-192.168.0.36:65484 > 172.20.25.18:443
+TRAFFIC|192.168.0.40:5353 > 224.0.0.251:5353
+TRAFFIC|192.168.0.11:1053 > 239.255.255.250:8082
+TRAFFIC|192.168.0.40:45164 > 239.255.255.250:1900
+TRAFFIC|192.168.0.36:65484 > 172.20.25.18:443
 
 
 -- User signal caught (pid: 45036).
@@ -167,10 +167,10 @@ Unique: 155
 
 netcap (pid: 45036) continuing with capturing traffic.
 
-192.168.0.40:49198 > 239.255.255.250:1900
-192.168.0.36:65485 > 172.20.25.18:443
-192.168.0.36:65486 > 143.192.7.24:443
-192.168.0.36:62190 > 192.168.0.1:53
+TRAFFIC|192.168.0.40:49198 > 239.255.255.250:1900
+TRAFFIC|192.168.0.36:65485 > 172.20.25.18:443
+TRAFFIC|192.168.0.36:65486 > 143.192.7.24:443
+TRAFFIC|192.168.0.36:62190 > 192.168.0.1:53
 ...
 
 If there are more packets to capture from --packet-count or you omitted 
@@ -189,12 +189,12 @@ o The bit sequence set in the packet transport protocol (if any)
 
 Example:
 ...
-192.168.0.45:64099 > 172.20.25.18:443|62:62:1478572176:577471|tcp:SYN:2
-192.168.0.2:1048 > 239.255.255.250:8082|64:1514:1478572176:873878|udp:none:195
-192.168.0.2:8291 > 239.255.255.250:29757|64:1162:1478572176:885485|tcp:none:48
-192.168.0.11:1053 > 239.255.255.250:8082|64:505:1478572178:479122|udp:none:195
-132.245.51.2:443 > 192.168.0.45:64094|64:1184:1478572180:733472|tcp:PSH/ACK:24
-192.168.0.45:64094 > 132.245.51.2:443|64:66:1478572180:733607|tcp:ACK:16
+TRAFFIC|192.168.0.45:64099 > 172.20.25.18:443|HEADER|62:62:1478572176:577471|FLAG|tcp:SYN:2
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082|HEADER|64:1514:1478572176:873878|FLAG|udp:none:195
+TRAFFIC|192.168.0.2:8291 > 239.255.255.250:29757|HEADER|64:1162:1478572176:885485|FLAG|tcp:none:48
+TRAFFIC|192.168.0.11:1053 > 239.255.255.250:8082|HEADER|64:505:1478572178:479122|FLAG|udp:none:195
+TRAFFIC|132.245.51.2:443 > 192.168.0.45:64094|HEADER|64:1184:1478572180:733472|FLAG|tcp:PSH/ACK:24
+TRAFFIC|192.168.0.45:64094 > 132.245.51.2:443|HEADER|64:66:1478572180:733607|FLAG|tcp:ACK:16
 
 When capturing packets, the amount of traffic (especially on a busy network) 
 could be overwhelming. There are several options you can use to aid with 
@@ -207,16 +207,16 @@ are returned.
 
 Example WITHOUT using the unique functionality:
 ...
-192.168.0.11:1053 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.11:1053 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
 
 Total packets:
 Network: 48	IP: 11
@@ -226,8 +226,8 @@ Unique: Not enabled
 
 Example WITH using the unique functionality:
 ...
-192.168.0.11:1053 > 239.255.255.250:8082
-192.168.0.2:1048 > 239.255.255.250:8082
+TRAFFIC|192.168.0.11:1053 > 239.255.255.250:8082
+TRAFFIC|192.168.0.2:1048 > 239.255.255.250:8082
 
 Total packets:
 Network: 19	IP: 11
@@ -248,8 +248,8 @@ approach this. See pcresyntax(3) for more detail.
 
 Example:
 ...
-192.168.0.11:23674 >  69.89.31.56:21
-192.168.0.10:21364 >  176.74.176.187:23
+TRAFFIC|192.168.0.11:23674 >  69.89.31.56:21
+TRAFFIC|192.168.0.10:21364 >  176.74.176.187:23
 ...
 
 The regular expression filter is good, but there may be some need to leverage 
@@ -260,16 +260,165 @@ using the regular expression filter (--regex). This would be fine, but what if
 the IP changed or the list of CNAMEs were numerous? Rather than be concerned 
 with that nonsense, we can simply leverage a simple filter and having this 
 figured out. In this case, we rely on: --compile-filter and set it to the 
-host we care about: "host (www.foo.com or www.bar.com)". See pcap-filter(7) 
-for more detail on filtering syntax.
+host we care about: "host (www.foo.com or www.bar.com)".
 
 Example:
 ...
-192.168.20.42:23674 > 204.236.134.199:80
-204.236.134.199:80 > 192.168.20.42:23674
-192.168.10.100:33621 > 104.27.138.186:443
-104.27.138.186:443 > 192.168.10.100:33621
+TRAFFIC|192.168.20.42:23674 > 204.236.134.199:80
+TRAFFIC|204.236.134.199:80 > 192.168.20.42:23674
+TRAFFIC|192.168.10.100:33621 > 104.27.138.186:443
+TRAFFIC|104.27.138.186:443 > 192.168.10.100:33621
 ...
+
+The packet filtering rules of libpcap also supports more general packet 
+expressions, where arbitrary byte ranges in a packet are checked with relation 
+or binary operators. For byte range representation, you can use the following 
+format:
+
+proto [expr : size]
+
+- "proto" can be one of well-known protocols (e.g., ip, tcp, udp)
+- "expr" represents byte offset relative to the beginning of a specified 
+protocol header. For example: tcp[0] means always means the first byte of the 
+TCP header. You can specify the number of bytes past the TCP header and where 
+the flags reside. You can then specify which flag(s) by doing something like:
+
+--compile-filter "(tcp[13] == 2)"
+
+The above would return packets with the SYN bit set.
+
+--compile-filter "(tcp[13] == 20)"
+
+The above would return packets with the SYN and ACK bit set.
+
+--compile-filter "(tcp[13] == 24)"
+
+The above would return packets with PUSH and ACK bit set.
+
+The flags correspond to the following decimal structure:
+
+1 	= FIN
+2 	= SYN
+4 	= RST
+8 	= PSH
+16 	= ACK
+17	= FIN/ACK
+18	= SYN/ACK
+20	= RST/ACK
+24	= PSH/ACK
+32 	= URG
+
+Well known byte offsets exist such as "tcpflags" or value constants such as: 
+
+tcp-urg
+tcp-syn
+tcp-ack
+tcp-push
+tcp-rst
+tcp-fin 
+
+- "size" is optional, indicating the number of bytes to check starting from the 
+byte offset.
+
+Examples:
+
+TCP SYN:
+
+--compile-filter "(tcp[13] & 2 != 0)"
+
+Example:
+...
+TRAFFIC|192.168.0.45:55246 > 104.25.10.6:443|HEADER|64:78:1480100880:874146|FLAG|tcp:SYN:2
+TRAFFIC|104.25.10.6:443 > 192.168.0.45:55246|HEADER|64:66:1480100880:921384|FLAG|tcp:SYN/ACK:18
+
+TCP SYN:
+
+--compile-filter "tcp[tcpflags] & (tcp-syn) != 0"
+
+This can be exploited by passing any valid option to netcap's --compile-filter.
+
+Example:
+...
+TRAFFIC|192.168.0.45:54645 > 52.32.74.117:443|HEADER|64:78:1480099998:72602|FLAG|tcp:SYN:2
+TRAFFIC|52.32.74.117:443 > 192.168.0.45:54645|HEADER|64:74:1480099998:140910|FLAG|tcp:SYN/ACK:18
+
+TCP ACK:
+
+--compile-filter "(tcp[13] & 16 != 0)"
+
+Example:
+...
+TRAFFIC|132.245.70.82:443 > 192.168.0.45:54228|HEADER|64:128:1480101089:936922|FLAG|tcp:PSH/ACK:24
+
+TCP SYN or ACK:
+
+"tcp[tcpflags] & (tcp-syn|tcp-ack) != 0"
+
+Example:
+...
+TRAFFIC|192.168.0.45:54290 > 209.197.3.19:443|HEADER|64:78:1480099739:697276|FLAG|tcp:SYN:2
+TRAFFIC|209.197.3.19:443 > 192.168.0.45:54290|HEADER|64:74:1480099739:745061|FLAG|tcp:SYN/ACK:18
+TRAFFIC|52.26.195.87:80 > 192.168.0.45:54291|HEADER|64:66:1480099739:969075|FLAG|tcp:ACK:16
+TRAFFIC|192.168.0.45:54291 > 52.26.195.87:80|HEADER|64:480:1480099740:13057|FLAG|tcp:PSH/ACK:24
+TRAFFIC|192.168.0.45:52207 > 184.51.1.19:443|HEADER|64:66:1480099740:269766|FLAG|tcp:FIN/ACK:17
+
+TCP FIN:
+
+--compile-filter "tcp[tcpflags] & (tcp-fin) != 0"
+
+Example:
+...
+TRAFFIC|54.244.227.86:80 > 192.168.0.45:53683|HEADER|64:66:1480099478:780431|FLAG|tcp:FIN/ACK:17
+
+
+TCP RST:
+
+--compile-filter "(tcp[13] & 4 != 0)"
+
+Example:
+...
+TRAFFIC|192.168.0.45:55290 > 50.16.206.36:80|HEADER|54:54:1480100983:839989|FLAG|tcp:RST:4
+
+TCP RST:
+
+--compile-filter "tcp[tcpflags] & (tcp-rst) != 0"
+
+Example:
+...
+TRAFFIC|192.168.0.45:54488 > 54.149.124.73:443|HEADER|54:54:1480099910:545684|FLAG|tcp:RST:4
+
+HTTP GET:
+
+--compile-filter "(tcp[((tcp[12:1] & 0xf0) >> 2):4] = 0x47455420)"
+--compile-filter "(tcp[32:4] = 0x47455420)"
+
+Example:
+...
+TRAFFIC|192.168.0.45:50374 > 72.21.91.8:80|HEADER|64:814:1480349016:591647|FLAG|tcp:PSH/ACK:24
+
+HTTP POST:
+
+--compile-filter "(tcp[((tcp[12:1] & 0xf0) >> 2):4] = 0x504f5354)"
+--compile-filter "(tcp[32:4] = 0x504f5354)"
+
+Example:
+...
+TRAFFIC|172.21.9.253:53700 > 72.21.91.8:80|HEADER|64:934:1480355561:647320|FLAG|tcp:PSH/ACK:24
+
+HTTP REQUEST/RESPONSE HEADERS:
+
+--compile-filter "(((ip[2:2] - ((ip[0] & 0xf)<<2)) - ((tcp[12] & 0xf0)>>2)) != 0)"
+
+Example:
+...
+TRAFFIC|172.21.9.253:53714 > 92.222.168.187:443|HEADER|64:249:1480355683:708116|FLAG|tcp:PSH/ACK:24
+...
+TRAFFIC|192.168.0.45:54020 > 173.255.199.118:443|HEADER|64:260:1480355739:88131|FLAG|tcp:PSH/ACK:24
+
+NOTE: 
+- See pcap-filter(7) for more detail on filtering syntax
+- See: https://www.wireshark.org/tools/string-cf.html for a tool that can lets 
+you create capture filters that match strings in TCP payloads
 
 Another option that could be useful when capturing is to lookup up geographical 
 information based on location and IPv4 information. This can be useful for 
@@ -319,9 +468,11 @@ is used AND the IP address used for the lookup falls within the following:
 	"Loopback" IP addresses:
 		127.0.0.0 - 127.255.255.255
 
-If an IP falls within any of the above, the lookup value returned is prefixed 
-with: PU, MC, BC, AC, LB respectively. Otherwise, a lookup is attempted 
-and if a value is not found, NULL is returned for the respective value. 
+If an IP falls within any of the above, a NULL is assigned for a lookup. Based 
+on where the IP address falls within the address ranges above, the NULL is 
+prefixed with: PU, MC, BC, AC, LB respectively. Otherwise, a lookup is 
+attempted from the GEO database. If a value is not found in the database, 
+GEO_NULL is returned for the respective value. 
 
 The prefix identifiers map as follows:
 	RFC1918 / "Private Use" = PU
@@ -353,15 +504,15 @@ The fields for a IPv4 lookup (GEO_IP4_INFO) are:
 As an example, we will capture 10 packets, fetch both source and destination 
 information for location and IPv4. We named our GEO DB "geolite.dat" and 
 point netcap to its location. We will only be concerned with port 80 or 443 
-traffic (HTTP, HTTPS) where the traffic is for www.iana.org and the packets 
-are from www.iana.org (i.e. return traffic). We will specify that we are only  
+traffic (HTTP, HTTPS) where the traffic is for www.foobar.com and the packets 
+are from www.foobar.com (i.e. return traffic). We will specify that we are only  
 interested in unique packets. Finally, we will write the results to both stdout 
 and to a capture file residing in our home: ~/Desktop/cap.txt:
 
-$ ./netcap -c -s -cf ~/Desktop/cap.txt -gd fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=~/Desktop/geolite.dat -gs fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=~/Desktop/geolite.dat -pc 10 -re "^.*:(80\b|443)\s+>" -u --compile-filter "host www.iana.org"
+$ bin/netcap -c -s -cf ~/Desktop/cap.txt -gd fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=~/Desktop/geolite.dat -gs fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=~/Desktop/geolite.dat -pc 10 -re "^.*:(80\b|443)\s+>" -u --compile-filter "host www.foobar.com"
 
 ...
-192.0.32.8:443 > 192.168.0.45:63192|NA|USA|United States|Los Angeles|California|90066|34.0039|-118.4338|America/Los_Angeles|310|803|192.0.32.0|192.0.47.255|255.255.240.0|192.0.32.0/20|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|RFC1918_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16
+TRAFFIC|69.89.31.56:80 > 192.168.0.45:63688|SRC_CONTINENT_CODE|NA|SRC_COUNTRY_CODE3|USA|SRC_COUNTRY_NAME|United States|SRC_CITY|Provo|SRC_REGION_NAME|Utah|SRC_POSTAL_CODE|84606|SRC_LATITUDE|40.2181|SRC_LONGITUDE|-111.6133|SRC_TIME_ZONE|America/Denver|SRC_AREA_CODE|801|SRC_METRO_CODE|770|SRC_IP4_MIN|69.89.16.0|SRC_IP4_MAX|69.89.31.255|SRC_IP4_MASK|255.255.240.0|SRC_IP4_CIDR|69.89.16.0/20|DST_CONTINENT_CODE|PU_NULL|DST_COUNTRY_CODE3|PU_NULL|DST_COUNTRY_NAME|PU_NULL|DST_CITY|PU_NULL|DST_REGION_NAME|PU_NULL|DST_POSTAL_CODE|PU_NULL|DST_LATITUDE|PU_NULL|DST_LONGITUDE|PU_NULL|DST_TIME_ZONE|PU_NULL|DST_AREA_CODE|PU_NULL|DST_METRO_CODE|PU_NULL|DST_IP4_MIN|192.168.0.0|DST_IP4_MAX|192.168.255.255|DST_IP4_MASK|255.255.0.0|DST_IP4_CIDR|192.168.0.0/16
 
 Total packets:
 Network: 203	IP: 14
@@ -369,7 +520,7 @@ Requested: 10	Captured: 10
 Unique: 1
 ...
 
-In the above example, we can see the destination (192.0.32.8) information is 
+In the above example, we can see the destination (69.89.31.56) information is 
 retrieved for both location and IPv4. The source (192.168.0.45) falls within 
 the RFC1918 address space and is prefixed with "PU" (Private Use) identifier. 
 
@@ -589,12 +740,12 @@ just set the rule to unauthorized and you should quickly see if anything is
 awry. For example:
 
 # watch for FTP, TELNET, and TFTP
-!;0.0.0.0/0:* > 0.0.0.0/0:(2[013]|69)\b;...;1
-;0.0.0.0/0:* > 0.0.0.0/0:*;...;0
+!;0.0.0.0/0:* > 0.0.0.0/0:(2[013]|69)\b;...[rest of rule omitted]...;1
+;0.0.0.0/0:* > 0.0.0.0/0:*;...[rest of rule omitted]...;0
 
 # catch anything NOT already learned
 ... [other rules here] ...
-!;0.0.0.0/0:* > 0.0.0.0/0:*;...;0
+!;0.0.0.0/0:* > 0.0.0.0/0:*;...[rest of rule omitted]...;0
 
 Note:
 - netcap will ignore captured traffic that matches a learned rule. The 
@@ -637,7 +788,7 @@ examples:
 		- match all ports:
 		\d{1,5}, *
 		
-- See ./netcap --help for more information on learn mode options.
+- See netcap --help for more information on learn mode options.
 
 C. Monitor Mode
 
@@ -744,77 +895,108 @@ If more granularity is needed, you can leverage powerful features such as the
 --regex and --compile-filter options. These can be leveraged separately or 
 together as needed.
 
-As mentioned in the ClIENT section of this document, another option that could 
+As mentioned in the CAPTURE section of this document, another option that could 
 prove useful is netcap's ability to conduct geographical and IPv4 lookups. This 
-can be beneficial for analysis and analytics. See the CLIENT section to see 
+can be beneficial for analysis and analytics. See the CAPTURE section to see 
 more information. In this section, we assume to are aware of why you would want 
 to use it and just want to illustrate a simple example scenario:
 
 Scenario:
 =========
 
-You decide that traffic to www.blackhat.com is unauthorized - you worry that no 
+You decide that traffic to www.foobar.com is unauthorized - you worry that no 
 good can possibly come from visiting this site - in all seriousness, the point 
-is that www.blackhat.com can be replaced with any website that is ACTUALLY a 
-site that could cause harm; just using this site as an example only :)
+is that www.foobar.com can be replaced with any website that is ACTUALLY a 
+site that could cause harm.
 
 We are in a monitoring situation and have a client and server. In this example, 
-we are interested in monitoring traffic to www.blackhat.com where data is being 
+we are interested in monitoring traffic to www.foobar.com where data is being 
 passed (not concerned with other traffic). We will conduct a source and server 
-GEO DB lookup for both location and IPv4. There are other options being used, 
-but the only other real important one is to note that we only want unique 
-traffic returned. On the server side, we have typical options specified. One 
-interesting option is -pc (--packet-count) is set to 1. In this example, we 
-want to know when see even 1 event. Since we have also asked our server to 
-notify us, we would immediately learn of this happening, should we not be 
-watching the logs (or the console as we were not running in daemon mode).
+GEO DB lookup for both location and IPv4 as well. There are other options being used on the client, but the only other real important one is to note that we 
+only want unique traffic returned. 
+
+On the server side, one interesting option to note is -pc (--packet-count) is 
+set to 1. This is because we want to know when see even one event for this 
+scenario. Since we have also asked our server to notify us, we would learn of 
+this happening immediately. 
 
 Client:
 =======
 
-$ ./netcap -m --client localhost 55555 --log=client ~/Desktop/client.log -s -p -pd --compile-filter "host www.blackhat.com && (tcp[tcpflags] & (tcp-push) != 0)" -gd fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=etc/geolite.dat -gs fetch="GEO_LOC_INFO|GEO_IP4_INFO" db=etc/geolite.dat -u 
+$ bin/netcap -m --client localhost 55555 --log=client var/client.log -s -p -pd --compile-filter "host www.foobar.com && (tcp[tcpflags] & (tcp-push) != 0)" -gd fetch="GEO_IP4_INFO|GEO_LOC_INFO" db=etc/geolite.dat -gs fetch="GEO_LOC_INFO|GEO_IP4_INFO" db=etc/geolite.dat -u
 
 Server:
 =======
 
-$ ./netcap -m --server localhost 55555 --cache-file ~/Desktop/cache.txt --cache-key-dst --log=server ~/Desktop/server.log -n out=~/Desktop/notify.txt --sort-cache-date -pc 1 -s
+$ bin/netcap -m --server localhost 55555 --cache-file var/cache.txt --cache-key-dst --log=server var/server.log -n out=var/notify.txt --sort-cache-date -pc 1 -s
 
 Now that we have our monitoring up, we sit back and relax. At some point, we 
-see events. This happens after traffic to www.blackhat.com is seen. Below are 
+see events. This happens after traffic to www.foobar.com is seen. Below are 
 the example results. Take note of the amount traffic observed on the client 
-compared to that of the client (thanks to the unique flag):
+compared to that of the server (thanks to the unique flag):
 
 Client:
 =======
 
-Client Running|Sun Nov 20 16:32:36 2016|netcap|42658|localhost:55555|udp
+Client Running|Wed Nov 23 18:43:53 2016|netcap|10778|localhost:55555|udp
 Binding to interface: en0... Listening (promiscuous mode = Yes)...
-Server Message|Sun Nov 20 16:32:39 2016|netcap|42658|localhost:55555|udp|192.168.0.45:63980 > 104.20.65.243:80|0|64:652:1479684759:35314|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
-Server Message|Sun Nov 20 16:32:39 2016|netcap|42658|localhost:55555|udp|192.168.0.45:63961 > 104.20.65.243:443|0|64:875:1479684759:234384|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
-Server Message|Sun Nov 20 16:32:39 2016|netcap|42658|localhost:55555|udp|192.168.0.45:63985 > 104.20.65.243:80|0|64:732:1479684759:580722|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
-Server Message|Sun Nov 20 16:32:39 2016|netcap|42658|localhost:55555|udp|104.20.65.243:443 > 192.168.0.45:63961|0|64:571:1479684759:609745|tcp:PSH/ACK:24|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16
+Server Message|Wed Nov 23 18:43:59 2016|netcap|10778|localhost:55555|udp|TRAFFIC|192.168.0.45:64086 > 104.20.66.243:80|RECORD|0|HEADER|64:627:1479951839:174999|FLAG|tcp:PSH/ACK:24|SRC_CONTINENT_CODE|PU_NULL|SRC_COUNTRY_CODE3|PU_NULL|SRC_COUNTRY_NAME|PU_NULL|SRC_CITY|PU_NULL|SRC_REGION_NAME|PU_NULL|SRC_POSTAL_CODE|PU_NULL|SRC_LATITUDE|PU_NULL|SRC_LONGITUDE|PU_NULL|SRC_TIME_ZONE|PU_NULL|SRC_AREA_CODE|PU_NULL|SRC_METRO_CODE|PU_NULL|SRC_IP4_MIN|192.168.0.0|SRC_IP4_MAX|192.168.255.255|SRC_IP4_MASK|255.255.0.0|SRC_IP4_CIDR|192.168.0.0/16|DST_CONTINENT_CODE|NA|DST_COUNTRY_CODE3|USA|DST_COUNTRY_NAME|United States|DST_CITY|San Francisco|DST_REGION_NAME|California|DST_POSTAL_CODE|94107|DST_LATITUDE|37.7697|DST_LONGITUDE|-122.3933|DST_TIME_ZONE|America/Los_Angeles|DST_AREA_CODE|415|DST_METRO_CODE|807|DST_IP4_MIN|104.16.0.0|DST_IP4_MAX|104.31.255.255|DST_IP4_MASK|255.240.0.0|DST_IP4_CIDR|104.16.0.0/12
+Server Message|Wed Nov 23 18:43:59 2016|netcap|10778|localhost:55555|udp|TRAFFIC|192.168.0.45:64066 > 104.20.65.243:443|RECORD|0|HEADER|64:891:1479951839:362970|FLAG|tcp:PSH/ACK:24|SRC_CONTINENT_CODE|PU_NULL|SRC_COUNTRY_CODE3|PU_NULL|SRC_COUNTRY_NAME|PU_NULL|SRC_CITY|PU_NULL|SRC_REGION_NAME|PU_NULL|SRC_POSTAL_CODE|PU_NULL|SRC_LATITUDE|PU_NULL|SRC_LONGITUDE|PU_NULL|SRC_TIME_ZONE|PU_NULL|SRC_AREA_CODE|PU_NULL|SRC_METRO_CODE|PU_NULL|SRC_IP4_MIN|192.168.0.0|SRC_IP4_MAX|192.168.255.255|SRC_IP4_MASK|255.255.0.0|SRC_IP4_CIDR|192.168.0.0/16|DST_CONTINENT_CODE|NA|DST_COUNTRY_CODE3|USA|DST_COUNTRY_NAME|United States|DST_CITY|San Francisco|DST_REGION_NAME|California|DST_POSTAL_CODE|94107|DST_LATITUDE|37.7697|DST_LONGITUDE|-122.3933|DST_TIME_ZONE|America/Los_Angeles|DST_AREA_CODE|415|DST_METRO_CODE|807|DST_IP4_MIN|104.16.0.0|DST_IP4_MAX|104.31.255.255|DST_IP4_MASK|255.240.0.0|DST_IP4_CIDR|104.16.0.0/12
+Server Message|Wed Nov 23 18:43:59 2016|netcap|10778|localhost:55555|udp|TRAFFIC|192.168.0.45:64091 > 104.20.66.243:80|RECORD|0|HEADER|64:739:1479951839:715671|FLAG|tcp:PSH/ACK:24|SRC_CONTINENT_CODE|PU_NULL|SRC_COUNTRY_CODE3|PU_NULL|SRC_COUNTRY_NAME|PU_NULL|SRC_CITY|PU_NULL|SRC_REGION_NAME|PU_NULL|SRC_POSTAL_CODE|PU_NULL|SRC_LATITUDE|PU_NULL|SRC_LONGITUDE|PU_NULL|SRC_TIME_ZONE|PU_NULL|SRC_AREA_CODE|PU_NULL|SRC_METRO_CODE|PU_NULL|SRC_IP4_MIN|192.168.0.0|SRC_IP4_MAX|192.168.255.255|SRC_IP4_MASK|255.255.0.0|SRC_IP4_CIDR|192.168.0.0/16|DST_CONTINENT_CODE|NA|DST_COUNTRY_CODE3|USA|DST_COUNTRY_NAME|United States|DST_CITY|San Francisco|DST_REGION_NAME|California|DST_POSTAL_CODE|94107|DST_LATITUDE|37.7697|DST_LONGITUDE|-122.3933|DST_TIME_ZONE|America/Los_Angeles|DST_AREA_CODE|415|DST_METRO_CODE|807|DST_IP4_MIN|104.16.0.0|DST_IP4_MAX|104.31.255.255|DST_IP4_MASK|255.240.0.0|DST_IP4_CIDR|104.16.0.0/12
+Server Message|Wed Nov 23 18:43:59 2016|netcap|10778|localhost:55555|udp|TRAFFIC|192.168.0.45:64094 > 104.20.65.243:80|RECORD|0|HEADER|64:743:1479951839:808667|FLAG|tcp:PSH/ACK:24|SRC_CONTINENT_CODE|PU_NULL|SRC_COUNTRY_CODE3|PU_NULL|SRC_COUNTRY_NAME|PU_NULL|SRC_CITY|PU_NULL|SRC_REGION_NAME|PU_NULL|SRC_POSTAL_CODE|PU_NULL|SRC_LATITUDE|PU_NULL|SRC_LONGITUDE|PU_NULL|SRC_TIME_ZONE|PU_NULL|SRC_AREA_CODE|PU_NULL|SRC_METRO_CODE|PU_NULL|SRC_IP4_MIN|192.168.0.0|SRC_IP4_MAX|192.168.255.255|SRC_IP4_MASK|255.255.0.0|SRC_IP4_CIDR|192.168.0.0/16|DST_CONTINENT_CODE|NA|DST_COUNTRY_CODE3|USA|DST_COUNTRY_NAME|United States|DST_CITY|San Francisco|DST_REGION_NAME|California|DST_POSTAL_CODE|94107|DST_LATITUDE|37.7697|DST_LONGITUDE|-122.3933|DST_TIME_ZONE|America/Los_Angeles|DST_AREA_CODE|415|DST_METRO_CODE|807|DST_IP4_MIN|104.16.0.0|DST_IP4_MAX|104.31.255.255|DST_IP4_MASK|255.240.0.0|DST_IP4_CIDR|104.16.0.0/12
 ... [OTHER UNIQUE TRAFFIC OMITTED] ...
-
 ... [AT SOME POINT AN INTERRUPT IS SENT] ...
-
+^C
 -- Interrupt signal caught. Wrapping up...
 
 Total packets:
-Network: 3373	IP: 3194
-Requested: Indefinite amount	Captured: 3194
-Unique: 15
+Network: 11595	IP: 11119
+Requested: Indefinite amount	Captured: 10297
+Unique: 8
 ...
 
 Server:
 =======
 
-Server Running|Sun Nov 20 16:32:33 2016|netcap|42657|localhost:55555|udp
-Client Message|Sun Nov 20 16:32:39 2016|netcap|42657|localhost:55555 < 127.0.0.1:64851|udp|192.168.0.45 > 104.20.65.243:80|0|64:652:1479684759:35314|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
-Client Message|Sun Nov 20 16:32:39 2016|netcap|42657|localhost:55555 < 127.0.0.1:64851|udp|192.168.0.45 > 104.20.65.243:443|0|64:875:1479684759:234384|tcp:PSH/ACK:24|PU_continent_code|PU_country_code3|PU_country_name|PU_city|PU_region_name|PU_postal_code|PU_latitude|PU_longitude|PU_time_zone|PU_area_code|PU_metro_code|192.168.0.0|192.168.255.255|255.255.0.0|192.168.0.0/16|NA|USA|United States|San Francisco|California|94107|37.7697|-122.3933|America/Los_Angeles|415|807|104.16.0.0|104.31.255.255|255.240.0.0|104.16.0.0/12
+Server Running|Wed Nov 23 18:43:46 2016|netcap|10775|localhost:55555|udp
+Client Message|Wed Nov 23 18:43:59 2016|netcap|10775|localhost:55555 < 127.0.0.1:55313|udp|192.168.0.45 > 104.20.66.243:80|RECORD|0|HEADER|64:627:1479951839:174999|FLAG|tcp:PSH/ACK:24|SRC_CONTINENT_CODE|PU_NULL|SRC_COUNTRY_CODE3|PU_NULL|SRC_COUNTRY_NAME|PU_NULL|SRC_CITY|PU_NULL|SRC_REGION_NAME|PU_NULL|SRC_POSTAL_CODE|PU_NULL|SRC_LATITUDE|PU_NULL|SRC_LONGITUDE|PU_NULL|SRC_TIME_ZONE|PU_NULL|SRC_AREA_CODE|PU_NULL|SRC_METRO_CODE|PU_NULL|SRC_IP4_MIN|192.168.0.0|SRC_IP4_MAX|192.168.255.255|SRC_IP4_MASK|255.255.0.0|SRC_IP4_CIDR|192.168.0.0/16|DST_CONTINENT_CODE|NA|DST_COUNTRY_CODE3|USA|DST_COUNTRY_NAME|United States|DST_CITY|San Francisco|DST_REGION_NAME|California|DST_POSTAL_CODE|94107|DST_LATITUDE|37.7697|DST_LONGITUDE|-122.3933|DST_TIME_ZONE|America/Los_Angeles|DST_AREA_CODE|415|DST_METRO_CODE|807|DST_IP4_MIN|104.16.0.0|DST_IP4_MAX|104.31.255.255|DST_IP4_MASK|255.240.0.0|DST_IP4_CIDR|104.16.0.0/12
+
+-- Reached packet cache limit of 1 (server pid: 10775).
+Current records cached: 1
+Checking /netcap/var/cache.txt for existence of data... Yes.
+Reading and merging with existing cache... done.
+Writing cache to /netcap/var/cache.txt... done.
+Records (unique/total): 8/14
+Building notification... done.
+Refreshing server... done.
+
+Client Message|Wed Nov 23 18:43:59 2016|netcap|10775|localhost:55555 < 127.0.0.1:55313|udp|192.168.0.45 > 104.20.65.243:443|RECORD|0|HEADER|64:891:1479951839:362970|FLAG|tcp:PSH/ACK:24|SRC_CONTINENT_CODE|PU_NULL|SRC_COUNTRY_CODE3|PU_NULL|SRC_COUNTRY_NAME|PU_NULL|SRC_CITY|PU_NULL|SRC_REGION_NAME|PU_NULL|SRC_POSTAL_CODE|PU_NULL|SRC_LATITUDE|PU_NULL|SRC_LONGITUDE|PU_NULL|SRC_TIME_ZONE|PU_NULL|SRC_AREA_CODE|PU_NULL|SRC_METRO_CODE|PU_NULL|SRC_IP4_MIN|192.168.0.0|SRC_IP4_MAX|192.168.255.255|SRC_IP4_MASK|255.255.0.0|SRC_IP4_CIDR|192.168.0.0/16|DST_CONTINENT_CODE|NA|DST_COUNTRY_CODE3|USA|DST_COUNTRY_NAME|United States|DST_CITY|San Francisco|DST_REGION_NAME|California|DST_POSTAL_CODE|94107|DST_LATITUDE|37.7697|DST_LONGITUDE|-122.3933|DST_TIME_ZONE|America/Los_Angeles|DST_AREA_CODE|415|DST_METRO_CODE|807|DST_IP4_MIN|104.16.0.0|DST_IP4_MAX|104.31.255.255|DST_IP4_MASK|255.240.0.0|DST_IP4_CIDR|104.16.0.0/12
+
+-- Reached packet cache limit of 1 (server pid: 10775).
+Current records cached: 1
+Checking /netcap/var/cache.txt for existence of data... Yes.
+Reading and merging with existing cache... done.
+Writing cache to /netcap/var/cache.txt... done.
+Records (unique/total): 8/29
+Building notification... done.
+Refreshing server... done.
+...[OTHER SERVER SIDE CACHE REFRESHES OMITTED]...
 
 In the above, we can see TWO unique events for the server. One for port 80 and 
-one for port 443. Also, note the GEO DB data returned (see CLIENT section for 
-what the "PU" prefix means for the IP of 192.168.0.45 in the event).
+one for port 443. Since we specified a packet count of one, the server cache 
+was refreshed after the first packet (the one for port 80). Since we also told 
+the server to notify, it generates a notification file. Then another packet was 
+received (this one for port 443). The packet count limit of one is once again 
+reached so the server refreshes its cache and generates another notification.  
+
+Also, take note of the GEO information retuned for the source traffic and what 
+the "PU" prefix means for the IP of 192.168.0.45 in the event. Meanwhile, the 
+destination GEO information is returned as requested.
+
+IMPORTANT: It is NOT advised to use --packet-count with such a small integer 
+value on the server side if the traffic being captured is not leveraging a 
+filter (--compile-filter, --regex) to scope traffic or using the --unique 
+option to limit traffic.
 
 Useful commands/options when monitoring are:
 	
@@ -852,7 +1034,7 @@ Note:
 - You MUST capture in order to use netcap's learn mode but you do not 
 have to have a learn file to monitor. You will be warned when starting 
 a netcap client. Proceed at your own risk.
-- See ./netcap --help for more information for monitor mode options.
+- See netcap --help for more information for monitor mode options.
 
 ===========================================================================
 
@@ -865,7 +1047,7 @@ INSTALL.txt if necessary.
 
 1. Test install of netcap
 
-./netcap --help
+netcap --help
 
 Expected output: 
 	- The netcap help menu is outputted to stderr
@@ -875,7 +1057,7 @@ Unexpected output:
 2. Test capture mode (elevated privileges may be required)
 ** Split on multiple lines for readability 
 
-./netcap --interface <device> --capture --packet-count 10 --unique --stdout \
+netcap --interface <device> --capture --packet-count 10 --unique --stdout \
 --capture-file </path/to/capture-file>
 
 Expected output: 
@@ -885,14 +1067,14 @@ Unexpected output:
 	- Make sure you are root before capturing traffic
 	- Make sure a valid device is defined for the netcap --interface 
 	option. If in doubt of the available interfaces that can be 
-	captured from, run: sudo ./netcap --list-interfaces
+	captured from, run: sudo netcap --list-interfaces
 	- Ensure there is traffic on the interface to capture (you 
 	can use a tool like "tcpdump", "nmap", or "nc" to test)
 
 3. Test learn mode 
 ** Split on multiple lines for readability 
 
-./netcap --learn --capture-file </path/to/capture-file> --learn-file \
+netcap --learn --capture-file </path/to/capture-file> --learn-file \
 </path/to/learn-file>
 
 Expected output: 
@@ -939,7 +1121,7 @@ as it contains other documentation.
 5a. Start server (NON daemon)
 ** Split on multiple lines for readability 
 
-./netcap --monitor --server <host> <port> --notify out=<path/to/notify-file> \
+netcap --monitor --server <host> <port> --notify out=<path/to/notify-file> \
 --cache-file </path/to/cache-file> --cache-key-dst --log=server \
 </path/to/server-log-file> --stdout --packet-count 10
 
@@ -957,7 +1139,7 @@ Unexpected output:
 5b. Start client (NON daemon)
 ** Split on multiple lines for readability 
 
-./netcap --monitor --client <host> <port> --interface <device> --promiscuous \
+netcap --monitor --client <host> <port> --interface <device> --promiscuous \
 --learn-file </path/to/learn-file> --log=client out=<path/to/client-log-file> \
 --packet-count 1000 --unique --stdout
 
@@ -972,7 +1154,7 @@ Unexpected output:
 	- Make sure <host> and <port> are valid
 	- Make sure a valid device is defined for the netcap --interface 
 	option. If in doubt of the available interfaces that can be 
-	captured from, run: sudo ./netcap --list-interfaces
+	captured from, run: sudo netcap --list-interfaces
 	- Make sure you have a netcap server running
 	- If you specified --packet-count and the client stopped because the 
 	number of packets were reached, increase the packet limit or omit the 
@@ -985,7 +1167,7 @@ the below commands:
 Server:
 ** Split on multiple lines for readability 
 
-./netcap --monitor --server <host> <port> --notify out=<path/to/notify-file> \
+netcap --monitor --server <host> <port> --notify out=<path/to/notify-file> \
 --cache-file </path/to/cache-file> --cache-key-dst --log=server \
 </path/to/server-log-file> --packet-count <count> --daemon
 
@@ -999,7 +1181,7 @@ the running processes to find it
 Client:
 ** Split on multiple lines for readability 
 
-./netcap --monitor --client <host> <port> --interface <device> --promiscuous \
+netcap --monitor --client <host> <port> --interface <device> --promiscuous \
 --learn-file </path/to/learn-file> --log=client out=<path/to/client-log-file> \
 --packet-count 1000 --unique --daemon
 
@@ -1040,7 +1222,7 @@ Unexpected output:
 	- Make sure <host> and <port> are valid
 	- Make sure a valid device is defined for the netcap --interface 
 	option. If in doubt of the available interfaces that can be 
-	captured from, run: sudo ./netcap --list-interfaces
+	captured from, run: sudo netcap --list-interfaces
 	- Make sure you have a netcap server running
 
 8. Test refresh client/server script (elevated privileges may be required)
