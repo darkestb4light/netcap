@@ -3891,7 +3891,7 @@ sub monitor_client
 					$log_msg .= "$client_msg\n";
 					log_message($log_msg, $arg->{log_client});
 				}
-				$socket->send("$client_msg") 
+				$socket->send($client_msg) 
 					or die("$!: $arg->{name} (pid: $pid) unable to send to $arg->{host}:$arg->{port}\n");
 				$data{$packet_count} = $packet;
 			}
