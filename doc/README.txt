@@ -176,7 +176,8 @@ TRAFFIC|192.168.0.36:62190 > 192.168.0.1:53
 If there are more packets to capture from --packet-count or you omitted 
 the option, netcap will go back to listening for packets.
 
-If desired, you can choose to have netcap output more verbose packet detail. This is accomplished by specifying -pd or --packet-detail, when capturing. This 
+If desired, you can choose to have netcap output more verbose packet detail. 
+This is accomplished by specifying -pd or --packet-detail, when capturing. This 
 will cause netcap to output more packet detail such as:
 
 o The packet capture length actually captured
@@ -279,7 +280,7 @@ proto [expr : size]
 
 - "proto" can be one of well-known protocols (e.g., ip, tcp, udp)
 - "expr" represents byte offset relative to the beginning of a specified 
-protocol header. For example: tcp[0] means always means the first byte of the 
+protocol header. For example: tcp[0] always means the first byte of the 
 TCP header. You can specify the number of bytes past the TCP header and where 
 the flags reside. You can then specify which flag(s) by doing something like:
 
@@ -318,7 +319,9 @@ tcp-rst
 tcp-fin 
 
 - "size" is optional, indicating the number of bytes to check starting from the 
-byte offset.
+byte offset. 
+
+The above can be exploited by passing any valid option to netcap's --compile-filter.
 
 Examples:
 
@@ -334,8 +337,6 @@ TRAFFIC|104.25.10.6:443 > 192.168.0.45:55246|HEADER|64:66:1480100880:921384|FLAG
 TCP SYN:
 
 --compile-filter "tcp[tcpflags] & (tcp-syn) != 0"
-
-This can be exploited by passing any valid option to netcap's --compile-filter.
 
 Example:
 ...
@@ -417,19 +418,29 @@ TRAFFIC|192.168.0.45:54020 > 173.255.199.118:443|HEADER|64:260:1480355739:88131|
 
 NOTE: 
 - See pcap-filter(7) for more detail on filtering syntax
-- See: https://www.wireshark.org/tools/string-cf.html for a tool that can lets 
-you create capture filters that match strings in TCP payloads
+- See: https://www.wireshark.org/tools/string-cf.html for a tool that lets you 
+create capture filters that match strings in TCP payloads
 
 Another option that could be useful when capturing is to lookup up geographical 
 information based on location and IPv4 information. This can be useful for 
 trending where traffic is coming from or where it may be destined. For example, 
 suppose you wanted to track what countries might be hitting your webserver or 
 where egress traffic is going that is deemed unauthorized over services that 
-may be unauthorized (telnet, tftp, etc). The geographical information is stored 
-within a GEO database file obtained from Maxmind.com. The file is called 
-"GeoLiteCity.dat". Currently, netcap relies on the "lite" version which is 
-free. Also, netcap relies on the legacy version as opposed to using the GEO2 
-version. This will likely be included in a later version. 
+may be unauthorized (telnet, tftp, etc). 
+
+The geographical information is stored within a GEO database file obtained from 
+Maxmind.com. The file is called "GeoLiteCity.dat" and can be found within the 
+existing netcap structure:
+
+netcap/dependencies/geo-ip/db/lite/GeoLiteCity.dat.gz. 
+
+If more up-to-date file is needed, you can check for it here:
+
+http://geolite.maxmind.com/download/geoip/database/GeoLiteCity.dat.gz
+
+Currently, netcap relies on the "lite" version which is free. Also, netcap 
+relies on the legacy version as opposed to using the GEO2 version. This will 
+likely be included in a later version. 
 
 To use a GEO lookup, specify -gs/--geo-src-lookup or -gd/--geo-dst-lookup. The 
 former will cause netcap to conduct a GEO lookup on the source traffic, while 
