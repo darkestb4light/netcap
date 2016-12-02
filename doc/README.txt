@@ -254,7 +254,7 @@ TRAFFIC|192.168.0.10:21364 >  176.74.176.187:23
 ...
 
 The regular expression filter is good, but there may be some need to leverage 
-another filter option that netcap offers. This feature leverage the filtering 
+another filter option that netcap offers. This feature leverages the filtering 
 power from the PCAP library. Suppose you want to monitor activity to a website 
 that concerns you. You could lookup the IP for the website and create a filter 
 using the regular expression filter (--regex). This would be fine, but what if 
@@ -923,7 +923,8 @@ site that could cause harm.
 We are in a monitoring situation and have a client and server. In this example, 
 we are interested in monitoring traffic to www.foobar.com where data is being 
 passed (not concerned with other traffic). We will conduct a source and server 
-GEO DB lookup for both location and IPv4 as well. There are other options being used on the client, but the only other real important one is to note that we 
+GEO DB lookup for both location and IPv4 as well. There are other options being 
+used on the client, but the only other real important one is to note that we 
 only want unique traffic returned. 
 
 On the server side, one interesting option to note is -pc (--packet-count) is 
