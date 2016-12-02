@@ -22,6 +22,20 @@ The details of each step is contained within each numbered section:
 #5 = Execute: /path/to/netcap —-help (where /path/to/netcap is the location 
 of where netcap resides)
 
+NOTE: 
+- If you get netcap's help menu, then all dependencies should be well
+- If you get the following error when trying various commands such as 
+trying to list interfaces, capture, or monitor in client mode:
+
+ERROR: Unable to determine a default network device - no suitable device found
+
+You likely need to run these commands using elevated permissions such as:
+
+$ sudo /path/to/netcap --list-interfaces
+$ sudo /path/to/netcap --capture 
+$ sudo /path/to/netcap --monitor --client 
+...
+
 ===========================================================================
 	
 1. Copy netcap archive to the desired server(s) for installation.
@@ -222,22 +236,34 @@ Net::Pcap (libpcap) build solutions:
 
 => Look to see if you have libpcap installed in the common directories. If you 
 do not have it installed, you will need to install it. It should also reside 
-in: dependencies/net-pcap/libpcap-1.8.1.tar.gz. You should see that it has been 
-installed similar to: /usr/lib or /usr/local/lib
+in: dependencies/net-pcap/libpcap-1.8.1.tar.gz. A typical install should be:
+
+$ ./configure
+$ make
+$ sudo make install
+
+You should see that it has been installed similar to: 
+
+/usr/lib or /usr/local/lib
+
 => Once it is installed, attempt to compile/install Net::Pcap. If you get the same error, you may be missing the development headers in the location where 
 the  dependency Net::Pcap is looking. Try running:
 
 $ perl Makefile.PL INC=-I/path/to/libpcap/headers LIBS='-L/path/to/libpcap -lpcap'
 
-=> If this fails:
+=> If this fails, try to install them manually:
 
 $ sudo yum install libpcap-devel
 $ perl Makefile.PL
 
-If this fails, then try the following:
+If this fails, then try the following (accept the defaults for each when 
+prompted):
 
 $ sudo yum install perl-CPAN
 $ sudo cpan install Net::Pcap
+
+NOTE: The install of Net::Pcap can take some time using the above method as all 
+tests are checked. If the above fails, file a bug so that it can be researched.
 
 Now, proceed to 4c (assuming there were no issues that prevented compiling).
 
