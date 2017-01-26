@@ -21,7 +21,17 @@
 #NETCAP_PROG=
 #NETCAP_ARG=
 
-STATUS=-1
+STATUS=-2
+
+if [ -z ${NETCAP_PROG+x} ]; then 
+	echo "NETCAP_PROG variable must be set"
+	exit $STATUS
+fi
+
+if [ -z ${NETCAP_ARG+x} ]; then 
+        echo "NETCAP_ARG variable must be set"
+        exit $STATUS
+fi
 
 echo "$0 will attempt to start the netcap server..."
 if [[ "$(ps auxww | awk '/netcap/ && /--server/ && !/awk/ {print $2}')" > 0 ]]; then
