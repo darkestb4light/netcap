@@ -11,6 +11,32 @@
 #	- You may need to set the path for the 
 #	bash interpreter above if it is different 
 #	then: "/bin/bash"
+#
+#	Passing certain options/arguments where 
+#	quotes are necessary, you may receive a 
+#	conflict. This is due to the shell trying
+#	to parse the value. 
+#
+#	Note: This is only the case when passed via the script, 
+#	not when passed using the command line
+#
+#	For example:
+#
+#	NETCAP_ARG="... -gd fetch='GEO_LOC_INFO|GEO_IP4_INFO' ..."
+#	
+#	The above will result in a misleading error:
+#
+#	ERROR: Invalid destination geo constant or combination. \
+#	Expecting: GEO_LOC_INFO or GEO_IP4_INFO
+#	Unable to start netcap client. Aborting.	
+#
+#	The above can be addressed by specifiying it as follows:
+#
+#	NETCAP_ARG="... -gd fetch='"GEO_LOC_INFO|GEO_IP4_INFO"' ..."
+#		- OR -
+#	NETCAP_ARG="... -gd fetch="'GEO_LOC_INFO|GEO_IP4_INFO'" ..."
+#
+#	This allows the shell to parse appropriately.
 ##################################################
 
 #	1. Set the below variables for:
@@ -21,7 +47,17 @@
 #NETCAP_PROG=
 #NETCAP_ARG=
 
-STATUS=-1
+STATUS=-2
+
+if [ -z ${NETCAP_PROG+x} ]; then 
+	echo "NETCAP_PROG variable must be set"
+	exit $STATUS
+fi
+
+if [ -z ${NETCAP_ARG+x} ]; then 
+        echo "NETCAP_ARG variable must be set"
+        exit $STATUS
+fi
 
 echo "$0 will attempt to start the netcap client..."
 if [[ "$(ps auxww | awk '/netcap/ && /--client/ && !/awk/ {print $2}')" > 0 ]]; then
