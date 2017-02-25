@@ -68,7 +68,7 @@ main();
 sub main
 {
 	my %env = 	(
-					version	=> '1.30.0',
+					version	=> '1.30.2',
 					program	=> basename($0),
 					pid		=> $$,
 					success	=> 0,
@@ -288,7 +288,7 @@ sub main
 		}elsif($ARGV[$i] =~ m/^-d$|^--daemon$/){
 			$arg{do_daemon} = 1;
 			$arg{error_file} = "$arg{name}.error.log";
-		}elsif($ARGV[$i] =~ m/^-gd$|^-geo-dst-lookup$/){
+		}elsif($ARGV[$i] =~ m/^-gd$|^--geo-dst-lookup$/){
 			if($ARGV[$i+1] =~ m/^fetch=.*$/){
 				$ARGV[$i++];
 				if($ARGV[$i] =~ m/^fetch=\s*(GEO_LOC_INFO|GEO_IP4_INFO)?\s*\|?\s*(GEO_LOC_INFO|GEO_IP4_INFO)?\s*$/){
@@ -330,7 +330,7 @@ sub main
 				die "ERROR: Expecting GEO_CONSTANT to be: GEO_LOC_INFO or GEO_IP4_INFO\n"
 			}
 			$arg{do_geo_dst} = 1;
-		}elsif($ARGV[$i] =~ m/^-gs$|^-geo-src-lookup$/){
+		}elsif($ARGV[$i] =~ m/^-gs$|^--geo-src-lookup$/){
 			if($ARGV[$i+1] =~ m/^fetch=.*$/){
 				$ARGV[$i++];
 				if($ARGV[$i] =~ m/^fetch=\s*(GEO_LOC_INFO|GEO_IP4_INFO)?\s*\|?\s*(GEO_LOC_INFO|GEO_IP4_INFO)?\s*$/){
@@ -1212,6 +1212,12 @@ sub get_capture_packet
 						64 	=> "ECE",		#extension to TCP/IP (rfc3168)
 						128 => "CWR",		#extension to TCP/IP (rfc3168)
 					);
+
+	#attempt suppression of annoying NetPacket::TCP API warnings that I can't 
+	#do anything about :(
+	$SIG{'__WARN__'} = sub {
+		warn $_[0] unless(caller eq "NetPacket::TCP" or caller eq "TCP");
+	};
 	
 	#get raw packet off the wire and fill header
 	Net::Pcap::pcap_next_ex($pcap, \%hdr, $packet);
@@ -3333,7 +3339,7 @@ sub monitor_server
 	$date = localtime();
 	$log_msg = "Server Running|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol\n";
 	log_message($log_msg, $arg->{log_server}) if($arg->{do_log});
-	print "Server Running|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol\n"
+	print STDERR "Server Running|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol\n"
 		if($arg->{do_stdout});
 	while($socket->recv($packet, $MAX_LEN) || 1) 
 	{
@@ -3672,6 +3678,8 @@ sub monitor_client
 	#get initial learned record count
 	if($arg->{do_log}){
 		$date = localtime();
+		get_learned($arg->{lfile}, $learned, \$total_learned, 0);
+		$total_learned = keys(%{$learned});
 		$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
 		$log_msg .= "Learned rules loaded: $total_learned\n";
 		log_message($log_msg, $arg->{log_client});
@@ -3865,13 +3873,15 @@ sub monitor_client
 			if($arg->{do_unique}){
 				if(! exists($data{$packet})){
 					if($arg->{do_stdout}){
-						printf("Server Message|%s|%s|%d|%s:%d|%s|%s\n", $date, 
-							$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+						printf("Server Message|%s|%s|%d|%s:%d|%s|%s:%d|%s|%s|%s\n", 
+							$date, $arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+							"PEER", $arg->{host}, $arg->{port}, "PROTOCOL", 
 							$protocol, $client_msg);
 					}
 					if($arg->{do_log}){
 						$date = localtime();
-						$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol|";
+						$log_msg = "Server Message|$date|$arg->{name}|$pid| $arg->{host}:$arg->{port}|";
+						$log_msg .= "PEER|$arg->{host}:$arg->{port}|PROTOCOL|$protocol|";
 						$log_msg .= "$client_msg\n";
 						log_message($log_msg, $arg->{log_client});
 					}
@@ -3881,13 +3891,15 @@ sub monitor_client
 				$data{$packet}++;
 			}else{
 				if($arg->{do_stdout}){
-					printf("Server Message|%s|%s|%d|%s:%d|%s|%s\n", $date, 
-						$arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+					printf("Server Message|%s|%s|%d|%s:%d|%s|%s:%d|%s|%s|%s\n", 
+						$date, $arg->{name}, $pid, $arg->{host}, $arg->{port}, 
+						"PEER", $arg->{host}, $arg->{port}, "PROTOCOL", 
 						$protocol, $client_msg);
 				}
 				if($arg->{do_log}){
 					$date = localtime();
-					$log_msg = "Server Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|$protocol|";
+					$log_msg = "Server Message|$date|$arg->{name}|$pid| $arg->{host}:$arg->{port}|";
+					$log_msg .= "PEER|$arg->{host}:$arg->{port}|PROTOCOL|$protocol|";
 					$log_msg .= "$client_msg\n";
 					log_message($log_msg, $arg->{log_client});
 				}
