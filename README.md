@@ -1,4 +1,4 @@
-# netcap (version 1.30.0)
+# netcap
 
 A network host to host discovery tool with the intent to: 1.) Capture 2.) Learn 3.) Monitor (and notify)
 
