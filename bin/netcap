@@ -68,7 +68,7 @@ main();
 sub main
 {
 	my %env = 	(
-					version	=> '1.30.3',
+					version	=> '1.30.4',
 					program	=> basename($0),
 					pid		=> $$,
 					success	=> 0,
