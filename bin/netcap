@@ -68,7 +68,7 @@ main();
 sub main
 {
 	my %env = 	(
-					version	=> '1.30.2',
+					version	=> '1.30.3',
 					program	=> basename($0),
 					pid		=> $$,
 					success	=> 0,
@@ -3678,8 +3678,12 @@ sub monitor_client
 	#get initial learned record count
 	if($arg->{do_log}){
 		$date = localtime();
-		get_learned($arg->{lfile}, $learned, \$total_learned, 0);
-		$total_learned = keys(%{$learned});
+		if($arg->{do_learn}){
+			get_learned($arg->{lfile}, $learned, \$total_learned, 0);
+			$total_learned = keys(%{$learned});
+		}else{
+			$total_learned = 0;
+		}
 		$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
 		$log_msg .= "Learned rules loaded: $total_learned\n";
 		log_message($log_msg, $arg->{log_client});
