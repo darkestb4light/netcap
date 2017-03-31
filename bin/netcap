@@ -1774,7 +1774,7 @@ sub get_learned
 				print STDERR "\n--Error: Invalid format while reading $lfile\n";
 				print STDERR "\nDetected invalid alpha charachter in source/destination.\n";
 				$learn_issue = "($learned_lines):\n$_";
-				$learned_lines = 0;	
+				$learned_lines = -1;	
 				last;
 		}else{
 			if(substr($learn_line[4], -2, 1) == 1){	#regex rule
@@ -1786,7 +1786,7 @@ sub get_learned
 							print STDERR "\n--Error: Invalid format while reading $lfile\n";
 							print STDERR "\nDetected invalid format in source CIDR notation.\n";
 							$learn_issue = "($learned_lines):\n$_";
-							$learned_lines = 0;	
+							$learned_lines = -1;
 							last;
 						}
 					}else{
@@ -1796,7 +1796,7 @@ sub get_learned
 							print STDERR "\n--Error: Invalid format while reading $lfile\n";
 							print STDERR "\nPossible issue with Field 2 format or delimiter.\n";
 							$learn_issue = "($learned_lines):\n$_";
-							$learned_lines = 0;	
+							$learned_lines = -1;
 							last;
 						}
 					}
@@ -1806,7 +1806,7 @@ sub get_learned
 							print STDERR "\n--Error: Invalid format while reading $lfile\n";
 							print STDERR "\nDetected invalid format in destination CIDR notation.\n";
 							$learn_issue = "($learned_lines):\n$_";
-							$learned_lines = 0;	
+							$learned_lines = -1;
 							last;
 						}else{
 							if($_ !~ m/^[\!]?;.*:.*\s>\s.*\..*\..*\..*:.*;.*?;
@@ -1815,7 +1815,7 @@ sub get_learned
 								print STDERR "\n--Error: Invalid format while reading $lfile\n";
 								print STDERR "\nPossible issue with Field 2 format or delimiter.\n";
 								$learn_issue = "($learned_lines):\n$_";
-								$learned_lines = 0;	
+								$learned_lines = -1;
 								last;
 							}
 						}
@@ -1827,7 +1827,7 @@ sub get_learned
 						print STDERR "\n--Error: Invalid format while reading $lfile\n";
 						print STDERR "\nPossible issue with Field 2 format or delimiter.\n";
 						$learn_issue = "($learned_lines):\n$_";
-						$learned_lines = 0;	
+						$learned_lines = -1;
 						last;
 					}
 				}
@@ -1855,7 +1855,7 @@ sub get_learned
 					print STDERR "unable to load records.\n";
 					print STDERR "\n--Error: Invalid format while reading $lfile\n";
 					$learn_issue = "($learned_lines):\n$_";
-					$learned_lines = 0;	
+					$learned_lines = -1;
 					last;
 				}
 			}
@@ -1903,7 +1903,7 @@ sub get_learned
 	if($duplicates > 0){
 		die "ERROR: \nNumber of issues to fix: $duplicates\nPlease rectify and try again. Quitting.\n";
 	}else{
-		if($learned_lines == 0){
+		if($learned_lines == -1){
 			print STDERR "\n[Expected format]:\n\n";
 			print STDERR "[!];src[/mask]:prt > dst[/mask]:prt;[comment];";
 			print STDERR "[Day] Mon  dd hh:mm:ss YYYY;0|1\n\n";
@@ -3676,7 +3676,7 @@ sub monitor_client
 	}
 	
 	#get initial learned record count
-	get_learned($arg->{lfile}, $learned, \$total_learned, 0) if($arg->{do_learn});
+	get_learned($arg->{lfile}, $learned, \$total_learned, 0);
 	$total_learned = keys(%{$learned});
 	
 	if($arg->{do_log}){
