@@ -68,7 +68,7 @@ main();
 sub main
 {
 	my %env = 	(
-					version	=> '1.30.3',
+					version	=> '1.30.4',
 					program	=> basename($0),
 					pid		=> $$,
 					success	=> 0,
@@ -3552,7 +3552,7 @@ sub monitor_client
 	my $record_id = 0;
 	my $match = 0;
 	my $log_msg;
-	my  $client_msg;
+	my $client_msg;
 	my %data;
 	my $ucount = ($arg->{do_unique} == 0) ? "Not enabled" : 0;
 	my $packet_max = ($arg->{packet_count} == 0) ? "Indefinite amount" : $arg->{packet_count};
@@ -3669,21 +3669,18 @@ sub monitor_client
 		if($arg->{do_stdout});
 	
 	if($arg->{do_log}){
-			$date = localtime();
-			$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
-			$log_msg .= "Listening (promiscuous mode = $arg->{promiscuous})\n";
-			log_message($log_msg, $arg->{log_client});
+		$date = localtime();
+		$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
+		$log_msg .= "Listening (promiscuous mode = $arg->{promiscuous})\n";
+		log_message($log_msg, $arg->{log_client});
 	}
 	
 	#get initial learned record count
+	get_learned($arg->{lfile}, $learned, \$total_learned, 0) if($arg->{do_learn});
+	$total_learned = keys(%{$learned});
+	
 	if($arg->{do_log}){
 		$date = localtime();
-		if($arg->{do_learn}){
-			get_learned($arg->{lfile}, $learned, \$total_learned, 0);
-			$total_learned = keys(%{$learned});
-		}else{
-			$total_learned = 0;
-		}
 		$log_msg = "Message|$date|$arg->{name}|$pid|$arg->{host}:$arg->{port}|";
 		$log_msg .= "Learned rules loaded: $total_learned\n";
 		log_message($log_msg, $arg->{log_client});
